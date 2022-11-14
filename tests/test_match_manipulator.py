@@ -15,12 +15,14 @@ class TestMatchManipulator(unittest2.TestCase):
         self.testbed.activate()
         self.testbed.init_datastore_v3_stub()
         self.testbed.init_memcache_stub()
+        ndb.get_context().clear_cache()  # Prevent data from leaking between tests
+
         self.testbed.init_taskqueue_stub(root_path=".")
 
         self.event = Event(
-          id="2012ct",
-          event_short="ct",
-          year=2012
+            id="2012ct",
+            event_short="ct",
+            year=2012
         )
 
         self.old_match = Match(

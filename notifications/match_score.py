@@ -5,11 +5,11 @@ from notifications.base_notification import BaseNotification
 
 class MatchScoreNotification(BaseNotification):
 
+    _priority = 'high'
+
     def __init__(self, match):
         self.match = match
         self.event = match.event.get()
-        self._event_feed = self.event.key_name
-        self._district_feed = self.event.event_district_enum
 
     @property
     def _type(self):
@@ -17,7 +17,7 @@ class MatchScoreNotification(BaseNotification):
 
     def _build_dict(self):
         data = {}
-        data['message_type'] = NotificationType.type_names[self._type]
+        data['notification_type'] = NotificationType.type_names[self._type]
         data['message_data'] = {}
         data['message_data']['event_name'] = self.event.name
         data['message_data']['event_key'] = self.event.key_name

@@ -1,8 +1,6 @@
 import logging
 import re
 
-from BeautifulSoup import BeautifulSoup
-
 from datafeeds.parser_base import ParserBase
 
 
@@ -16,8 +14,9 @@ class TbaVideosParser(ParserBase):
         Parse the directory listing on TBA to extract relevant TBAVideo
         information. Returns a list of TBAVideos
         """
-        soup = BeautifulSoup(html,
-                             convertEntities=BeautifulSoup.HTML_ENTITIES)
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html)
 
         videos = dict()
 

@@ -17,6 +17,8 @@ class TestMatchSuggestionAccepter(unittest2.TestCase):
         self.testbed.activate()
         self.testbed.init_datastore_v3_stub()
         self.testbed.init_memcache_stub()
+        ndb.get_context().clear_cache()  # Prevent data from leaking between tests
+
         self.testbed.init_taskqueue_stub(root_path=".")
 
         self.account = Account(
@@ -33,10 +35,10 @@ class TestMatchSuggestionAccepter(unittest2.TestCase):
         self.suggestion.put()
 
         self.event = Event(
-          id="2012ct",
-          event_short="ct",
-          year=2012,
-          event_type_enum=EventType.REGIONAL,
+            id="2012ct",
+            event_short="ct",
+            year=2012,
+            event_type_enum=EventType.REGIONAL
         )
         self.event.put()
 
@@ -57,7 +59,7 @@ class TestMatchSuggestionAccepter(unittest2.TestCase):
         self.testbed.deactivate()
 
     def test_accept_suggestions(self):
-        MatchSuggestionAccepter.accept_suggestions([self.suggestion])
+        MatchSuggestionAccepter.accept_suggestion(self.match, self.suggestion)
 
         match = Match.get_by_id("2012ct_qm1")
         self.assertTrue("abcdef" in match.youtube_videos)

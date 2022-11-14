@@ -1,0 +1,63 @@
+dispatch:
+  # Start serving certain pages from py3
+  - url: "www.thebluealliance.com/"  # Just the homepage
+    service: py3-web
+
+  - url: "www.thebluealliance.com/about"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/events"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/events/*"
+    service: py3-web
+ 
+  - url: "www.thebluealliance.com/event/*/insights"
+    service: default
+
+  - url: "www.thebluealliance.com/event/*"
+    service: py3-web
+    
+  - url: "www.thebluealliance.com/gameday"
+    service: py3-web
+    
+  - url: "www.thebluealliance.com/gameday/*"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/team*"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/match/*"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/py3_css/*"
+    service: py3-web
+
+  - url: "www.thebluealliance.com/py3_javascript/*"
+    service: py3-web
+    
+  - url: "www.thebluealliance.com/watch/*"
+    service: py3-web
+
+  # Python 3 Migration
+  - url: "py3.thebluealliance.com/api/*"
+    service: py3-api
+
+  - url: "py3.thebluealliance.com/*"
+    service: py3-web
+
+  # Beta PWA
+  - url: "beta.thebluealliance.com/*"
+    service: pwa-ssr
+
+  - url: "py2.thebluealliance.com/*"
+    service: default
+
+  # Make sure things that need B2 instances still get
+  # higher CPU/memory limits
+  - url: "*/backend-tasks-b2/*"
+    service: backend-tasks-b2
+
+  # Send everything else to default module
+  - url: "*/"
+    service: default

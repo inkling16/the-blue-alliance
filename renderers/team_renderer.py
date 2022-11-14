@@ -1,12 +1,13 @@
 import datetime
 import os
+import tba_config
 
 from google.appengine.ext import ndb
-from google.appengine.ext.webapp import template
 
 from consts.district_type import DistrictType
+from consts.award_type import AwardType
+from consts.media_tag import MediaTag
 from database import award_query, event_query, match_query, media_query, team_query
-
 from helpers.data_fetchers.team_details_data_fetcher import TeamDetailsDataFetcher
 
 from helpers.award_helper import AwardHelper
@@ -15,26 +16,65 @@ from helpers.match_helper import MatchHelper
 from helpers.media_helper import MediaHelper
 
 from models.award import Award
+from models.district import District
 from models.event_team import EventTeam
 from models.match import Match
 from models.robot import Robot
 
 from template_engine import jinja2_engine
 
+from consts.event_type import EventType
+
 
 class TeamRenderer(object):
     @classmethod
     def render_team_details(cls, handler, team, year, is_canonical):
+        hof_award_future = award_query.TeamEventTypeAwardsQuery(team.key.id(), EventType.CMP_FINALS, AwardType.CHAIRMANS).fetch_async()
+        hof_video_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_VIDEO).fetch_async()
+        hof_presentation_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_PRESENTATION).fetch_async()
+        hof_essay_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_ESSAY).fetch_async()
         media_future = media_query.TeamYearMediaQuery(team.key.id(), year).fetch_async()
-        robot_future = Robot.get_by_id_async('{}_{}'.format(team.key.id(), year))
+        social_media_future = media_query.TeamSocialMediaQuery(team.key.id()).fetch_async()
+        robot_future = Robot.get_by_id_async("{}_{}".format(team.key.id(), year))
         team_districts_future = team_query.TeamDistrictsQuery(team.key.id()).fetch_async()
+        participation_future = team_query.TeamParticipationQuery(team.key.id()).fetch_async()
+
+        hof_awards = hof_award_future.get_result()
+        hof_video = hof_video_future.get_result()
+        hof_presentation = hof_presentation_future.get_result()
+        hof_essay = hof_essay_future.get_result()
+
+        hall_of_fame = {
+            "is_hof": len(hof_awards) > 0,
+            "years": [award.year for award in hof_awards],
+            "media": {
+                "video": hof_video[0].youtube_url_link if len(hof_video) > 0 else None,
+                "presentation": hof_presentation[0].youtube_url_link if len(hof_presentation) > 0 else None,
+                "essay": hof_essay[0].external_link if len(hof_essay) > 0 else None,
+            },
+        }
 
         events_sorted, matches_by_event_key, awards_by_event_key, valid_years = TeamDetailsDataFetcher.fetch(team, year, return_valid_years=True)
         if not events_sorted:
             return None
 
+        district_name = None
+        district_abbrev = None
+        team_district_points = None
+        team_districts = team_districts_future.get_result()
+        for district in team_districts:
+            if district and district.year == year:
+                district_abbrev = district.abbreviation
+                district_name = district.display_name
+                if district.rankings:
+                    team_district_points = next(
+                        iter(filter(lambda r: r['team_key'] == team.key_name,
+                               district.rankings)), None)
+                break
+
         participation = []
-        year_wlt_list = []
+        season_wlt_list = []
+        offseason_wlt_list = []
         year_match_avg_list = []
 
         current_event = None
@@ -61,27 +101,54 @@ class TeamRenderer(object):
                 qual_avg = None
                 elim_avg = None
                 wlt = EventHelper.calculateTeamWLTFromMatches(team.key_name, event_matches)
-                year_wlt_list.append(wlt)
+                if event.event_type_enum in EventType.SEASON_EVENT_TYPES:
+                    season_wlt_list.append(wlt)
+                else:
+                    offseason_wlt_list.append(wlt)
                 if wlt["win"] + wlt["loss"] + wlt["tie"] == 0:
                     display_wlt = None
                 else:
                     display_wlt = wlt
 
             team_rank = None
-            if event.rankings:
-                for element in event.rankings:
-                    if str(element[1]) == str(team.team_number):
-                        team_rank = element[0]
+            if event.details and event.details.rankings2:
+                for ranking in event.details.rankings2:
+                    if ranking['team_key'] == team.key.id():
+                        team_rank = ranking['rank']
                         break
 
-            participation.append({'event': event,
-                                  'matches': matches_organized,
-                                  'wlt': display_wlt,
-                                  'qual_avg': qual_avg,
-                                  'elim_avg': elim_avg,
-                                  'rank': team_rank,
-                                  'awards': event_awards})
+            video_ids = []
+            playlist = ""
+            for level in Match.COMP_LEVELS:
+                matches = matches_organized[level]
+                for match in matches:
+                    video_ids += [video.split("?")[0] for video in match.youtube_videos]
+            if video_ids:
+                playlist_title = u"{} (Team {})".format(event.name, team.team_number)
+                playlist = u"https://www.youtube.com/watch_videos?video_ids={}&title={}"
+                playlist = playlist.format(u",".join(video_ids), playlist_title)
 
+            district_points = None
+            if team_district_points:
+                district_points = next(
+                    iter(
+                        filter(lambda e: e['event_key'] == event.key_name,
+                               team_district_points['event_points'])), None)
+
+            participation.append({
+                "event": event,
+                "matches": matches_organized,
+                "wlt": display_wlt,
+                "qual_avg": qual_avg,
+                "elim_avg": elim_avg,
+                "rank": team_rank,
+                "awards": event_awards,
+                "playlist": playlist,
+                "district_points": district_points,
+            })
+
+        season_wlt = None
+        offseason_wlt = None
         if year == 2015:
             year_wlt = None
             year_qual_scores = []
@@ -95,25 +162,34 @@ class TeamRenderer(object):
         else:
             year_qual_avg = None
             year_elim_avg = None
-            year_wlt = {"win": 0, "loss": 0, "tie": 0}
-            for wlt in year_wlt_list:
-                year_wlt["win"] += wlt["win"]
-                year_wlt["loss"] += wlt["loss"]
-                year_wlt["tie"] += wlt["tie"]
-            if year_wlt["win"] + year_wlt["loss"] + year_wlt["tie"] == 0:
-                year_wlt = None
+            season_wlt = {"win": 0, "loss": 0, "tie": 0}
+            offseason_wlt = {"win": 0, "loss": 0, "tie": 0}
+
+            for wlt in season_wlt_list:
+                season_wlt["win"] += wlt["win"]
+                season_wlt["loss"] += wlt["loss"]
+                season_wlt["tie"] += wlt["tie"]
+            if season_wlt["win"] + season_wlt["loss"] + season_wlt["tie"] == 0:
+                season_wlt = None
+
+            for wlt in offseason_wlt_list:
+                offseason_wlt["win"] += wlt["win"]
+                offseason_wlt["loss"] += wlt["loss"]
+                offseason_wlt["tie"] += wlt["tie"]
+            if offseason_wlt["win"] + offseason_wlt["loss"] + offseason_wlt["tie"] == 0:
+                offseason_wlt = None
 
         medias_by_slugname = MediaHelper.group_by_slugname([media for media in media_future.get_result()])
-        image_medias = MediaHelper.get_images([media for media in media_future.get_result()])
+        avatar = MediaHelper.get_avatar(media_future.get_result())
+        image_medias = MediaHelper.get_images(media_future.get_result())
+        social_medias = sorted(social_media_future.get_result(), key=MediaHelper.social_media_sorter)
+        preferred_image_medias = filter(lambda x: team.key in x.preferred_references, image_medias)
 
-        district_name = None
-        district_abbrev = None
-        team_districts = team_districts_future.get_result()
-        if year in team_districts:
-            district_key = team_districts[year]
-            district_abbrev = district_key[4:]
-            district_type = DistrictType.abbrevs[district_abbrev]
-            district_name = DistrictType.type_names[district_type]
+        last_competed = None
+        participation_years = participation_future.get_result()
+        if len(participation_years) > 0:
+            last_competed = max(participation_years)
+        current_year = datetime.date.today().year
 
         handler.template_values.update({
             "is_canonical": is_canonical,
@@ -121,27 +197,57 @@ class TeamRenderer(object):
             "participation": participation,
             "year": year,
             "years": valid_years,
-            "year_wlt": year_wlt,
+            "season_wlt": season_wlt,
+            "offseason_wlt": offseason_wlt,
             "year_qual_avg": year_qual_avg,
             "year_elim_avg": year_elim_avg,
             "current_event": current_event,
             "matches_upcoming": matches_upcoming,
             "medias_by_slugname": medias_by_slugname,
+            "avatar": avatar,
+            "social_medias": social_medias,
             "image_medias": image_medias,
+            "preferred_image_medias": preferred_image_medias,
             "robot": robot_future.get_result(),
             "district_name": district_name,
             "district_abbrev": district_abbrev,
+            "last_competed": last_competed,
+            "current_year": current_year,
+            "max_year": tba_config.MAX_YEAR,
+            "hof": hall_of_fame,
+            "team_district_points": team_district_points,
         })
 
         if short_cache:
             handler._cache_expiration = handler.SHORT_CACHE_EXPIRATION
 
-        return jinja2_engine.render('team_details.html', handler.template_values)
+        return jinja2_engine.render("team_details.html", handler.template_values)
 
     @classmethod
     def render_team_history(cls, handler, team, is_canonical):
+        hof_award_future = award_query.TeamEventTypeAwardsQuery(team.key.id(), EventType.CMP_FINALS, AwardType.CHAIRMANS).fetch_async()
+        hof_video_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_VIDEO).fetch_async()
+        hof_presentation_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_PRESENTATION).fetch_async()
+        hof_essay_future = media_query.TeamTagMediasQuery(team.key.id(), MediaTag.CHAIRMANS_ESSAY).fetch_async()
         award_futures = award_query.TeamAwardsQuery(team.key.id()).fetch_async()
         event_futures = event_query.TeamEventsQuery(team.key.id()).fetch_async()
+        participation_future = team_query.TeamParticipationQuery(team.key.id()).fetch_async()
+        social_media_future = media_query.TeamSocialMediaQuery(team.key.id()).fetch_async()
+
+        hof_awards = hof_award_future.get_result()
+        hof_video = hof_video_future.get_result()
+        hof_presentation = hof_presentation_future.get_result()
+        hof_essay = hof_essay_future.get_result()
+
+        hall_of_fame = {
+            "is_hof": len(hof_awards) > 0,
+            "years": [award.year for award in hof_awards],
+            "media": {
+                "video": hof_video[0].youtube_url_link if len(hof_video) > 0 else None,
+                "presentation": hof_presentation[0].youtube_url_link if len(hof_presentation) > 0 else None,
+                "essay": hof_essay[0].external_link if len(hof_essay) > 0 else None,
+            },
+        }
 
         awards_by_event = {}
         for award in award_futures.get_result():
@@ -172,17 +278,29 @@ class TeamRenderer(object):
             event_awards.append((event, sorted_awards))
         event_awards = sorted(event_awards, key=lambda (e, _): e.start_date if e.start_date else datetime.datetime(e.year, 12, 31))
 
+        last_competed = None
+        participation_years = participation_future.get_result()
+        if len(participation_years) > 0:
+            last_competed = max(participation_years)
+        current_year = datetime.date.today().year
+
+        social_medias = sorted(social_media_future.get_result(), key=MediaHelper.social_media_sorter)
+
         handler.template_values.update({
-            'is_canonical': is_canonical,
-            'team': team,
-            'event_awards': event_awards,
-            'years': sorted(years),
-            'current_event': current_event,
-            'matches_upcoming': matches_upcoming
+            "is_canonical": is_canonical,
+            "team": team,
+            "event_awards": event_awards,
+            "years": sorted(years),
+            "social_medias": social_medias,
+            "current_event": current_event,
+            "matches_upcoming": matches_upcoming,
+            "last_competed": last_competed,
+            "current_year": current_year,
+            "max_year": tba_config.MAX_YEAR,
+            "hof": hall_of_fame,
         })
 
         if short_cache:
             handler._cache_expiration = handler.SHORT_CACHE_EXPIRATION
 
-        path = os.path.join(os.path.dirname(__file__), '../templates/team_history.html')
-        return template.render(path, handler.template_values)
+        return jinja2_engine.render("team_history.html", handler.template_values)

@@ -9,11 +9,14 @@ from database import team_query
 from models.team import Team
 
 from renderers.team_renderer import TeamRenderer
+from template_engine import jinja2_engine
 
 
 class TeamList(CacheableHandler):
-    VALID_PAGES = [1, 2, 3, 4, 5, 6, 7]
-    CACHE_VERSION = 1
+    MAX_TEAM_NUMBER_EXCLUSIVE = 9000  # Support between Team 0 and Team MAX_TEAM_NUMBER_EXCLUSIVE - 1
+    TEAMS_PER_PAGE = 1000
+    VALID_PAGES = range(1, (MAX_TEAM_NUMBER_EXCLUSIVE // TEAMS_PER_PAGE) + 1)  # + 1 to make range inclusive
+    CACHE_VERSION = 2
     CACHE_KEY_FORMAT = "team_list_{}"  # (page)
 
     def __init__(self, *args, **kw):
@@ -36,7 +39,7 @@ class TeamList(CacheableHandler):
             if curPage == 1:
                 label = '1-999'
             else:
-                label = "{}'s".format((curPage - 1) * 1000)
+                label = "{}'s".format((curPage - 1) * self.TEAMS_PER_PAGE)
             page_labels.append(label)
             if curPage == page:
                 cur_page_label = label
@@ -60,13 +63,12 @@ class TeamList(CacheableHandler):
             "current_page": page
         })
 
-        path = os.path.join(os.path.dirname(__file__), '../templates/team_list.html')
-        return template.render(path, self.template_values)
+        return jinja2_engine.render('team_list.html', self.template_values)
 
 
 class TeamCanonical(CacheableHandler):
     LONG_CACHE_EXPIRATION = 60 * 60 * 24
-    SHORT_CACHE_EXPIRATION = 60 * 5
+    SHORT_CACHE_EXPIRATION = 61
     CACHE_VERSION = 3
     CACHE_KEY_FORMAT = "team_canonical_{}"  # (team_number)
 

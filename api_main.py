@@ -3,7 +3,6 @@ import webapp2
 
 import tba_config
 
-from controllers.api_controller import ApiDeprecatedController, CsvTeamsAll
 from controllers.api.api_district_controller import ApiDistrictListController, ApiDistrictTeamsController, ApiDistrictRankingsController, \
      ApiDistrictEventsController
 from controllers.api.api_team_controller import ApiTeamController, ApiTeamEventsController, ApiTeamEventAwardsController, \
@@ -19,16 +18,12 @@ from controllers.api.api_match_controller import ApiMatchController
 from controllers.api.api_status_controller import ApiStatusController
 from controllers.api.api_trusted_controller import ApiTrustedEventAllianceSelectionsUpdate, ApiTrustedEventAwardsUpdate, \
                                                    ApiTrustedEventMatchesUpdate, ApiTrustedEventMatchesDelete, ApiTrustedEventMatchesDeleteAll, ApiTrustedEventRankingsUpdate, \
-                                                   ApiTrustedEventTeamListUpdate, ApiTrustedAddMatchYoutubeVideo
-
+                                                   ApiTrustedEventTeamListUpdate, ApiTrustedAddMatchYoutubeVideo, \
+                                                   ApiTrustedAddEventMedia, ApiTrustedUpdateEventInfo, ApiTrustedAddMatchZebraMotionWorks
 
 # Ensure that APIv2 routes include OPTIONS method for CORS preflight compatibility
 # https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS#Preflighted_requests
-app = webapp2.WSGIApplication([webapp2.Route(r'/api/v1/<:.*>',
-                                             ApiDeprecatedController,
-                                             methods=['GET']),
-                               ('/api/csv/teams/all', CsvTeamsAll),
-                               webapp2.Route(r'/api/v2/team/<team_key:>',
+app = webapp2.WSGIApplication([webapp2.Route(r'/api/v2/team/<team_key:>',
                                              ApiTeamController,
                                              methods=['GET', 'OPTIONS']),
                                webapp2.Route(r'/api/v2/team/<team_key:>/events',
@@ -64,7 +59,7 @@ app = webapp2.WSGIApplication([webapp2.Route(r'/api/v1/<:.*>',
                                webapp2.Route(r'/api/v2/team/<team_key:>/years_participated',
                                              ApiTeamYearsParticipatedController,
                                              methods=['GET', 'OPTIONS']),
-                               webapp2.Route(r'/api/v2/teams/<page_num:([0-9]*)>',
+                               webapp2.Route(r'/api/v2/teams/<page_num:([0-9]+)>',
                                              ApiTeamListController,
                                              methods=['GET', 'OPTIONS']),
                                webapp2.Route(r'/api/v2/event/<event_key:>',
@@ -111,26 +106,35 @@ app = webapp2.WSGIApplication([webapp2.Route(r'/api/v1/<:.*>',
                                              methods=['GET']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/alliance_selections/update',
                                              ApiTrustedEventAllianceSelectionsUpdate,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/awards/update',
                                              ApiTrustedEventAwardsUpdate,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/matches/update',
                                              ApiTrustedEventMatchesUpdate,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/matches/delete',
                                              ApiTrustedEventMatchesDelete,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/matches/delete_all',
                                              ApiTrustedEventMatchesDeleteAll,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/rankings/update',
                                              ApiTrustedEventRankingsUpdate,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/team_list/update',
                                              ApiTrustedEventTeamListUpdate,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
                                webapp2.Route(r'/api/trusted/v1/event/<event_key:>/match_videos/add',
                                              ApiTrustedAddMatchYoutubeVideo,
-                                             methods=['POST']),
+                                             methods=['POST', 'OPTIONS']),
+                               webapp2.Route(r'/api/trusted/v1/event/<event_key:>/media/add',
+                                             ApiTrustedAddEventMedia,
+                                             methods=['POST', 'OPTIONS']),
+                               webapp2.Route(r'/api/trusted/v1/event/<event_key:>/info/update',
+                                             ApiTrustedUpdateEventInfo,
+                                             methods=['POST', 'OPTIONS']),
+                               webapp2.Route(r'/api/trusted/v1/event/<event_key:>/zebra_motionworks/add',
+                                             ApiTrustedAddMatchZebraMotionWorks,
+                                             methods=['POST', 'OPTIONS']),
                                ], debug=tba_config.DEBUG)

@@ -10,7 +10,9 @@ from google.appengine.ext.webapp import template
 
 from controllers.base_controller import LoggedInHandler
 from database.database_query import DatabaseQuery
+from helpers.suggestions.suggestion_fetcher import SuggestionFetcher
 from models.account import Account
+from models.sitevar import Sitevar
 from models.suggestion import Suggestion
 
 
@@ -28,21 +30,12 @@ class AdminMain(LoggedInHandler):
         users = Account.query().order(-Account.created).fetch(5)
         self.template_values['users'] = users
 
-        # Retrieves the number of pending suggestions
-        video_suggestions = Suggestion.query().filter(
-            Suggestion.review_state == Suggestion.REVIEW_PENDING).filter(
-            Suggestion.target_model == "match").count()
-        self.template_values['video_suggestions'] = video_suggestions
+        self.template_values['suggestions_count'] = Suggestion.query().filter(
+            Suggestion.review_state == Suggestion.REVIEW_PENDING).count()
 
-        webcast_suggestions = Suggestion.query().filter(
-            Suggestion.review_state == Suggestion.REVIEW_PENDING).filter(
-            Suggestion.target_model == "event").count()
-        self.template_values['webcast_suggestions'] = webcast_suggestions
-
-        media_suggestions = Suggestion.query().filter(
-            Suggestion.review_state == Suggestion.REVIEW_PENDING).filter(
-            Suggestion.target_model == "media").count()
-        self.template_values['media_suggestions'] = media_suggestions
+        # Continuous deployment info
+        status_sitevar = Sitevar.get_by_id('apistatus')
+        self.template_values['contbuild_enabled'] = status_sitevar.contents.get('contbuild_enabled') if status_sitevar else None
 
         # version info
         try:
@@ -53,6 +46,7 @@ class AdminMain(LoggedInHandler):
 
             self.template_values['git_branch_name'] = data['git_branch_name']
             self.template_values['build_time'] = data['build_time']
+            self.template_values['build_number'] = data.get('build_number')
 
             commit_parts = re.split("[\n]+", data['git_last_commit'])
             self.template_values['commit_hash'] = commit_parts[0].split(" ")
@@ -74,6 +68,7 @@ class AdminDebugHandler(LoggedInHandler):
     def get(self):
         self._require_admin()
         self.template_values['cur_year'] = datetime.datetime.now().year
+        self.template_values['years'] = range(datetime.datetime.now().year, 2005, -1)
         path = os.path.join(os.path.dirname(__file__), '../../templates/admin/debug.html')
         self.response.out.write(template.render(path, self.template_values))
 

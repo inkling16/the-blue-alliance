@@ -1,9 +1,36 @@
 import unittest2
 
+from google.appengine.ext import ndb
+from google.appengine.ext import testbed
+
+from helpers.district_manipulator import DistrictManipulator
 from helpers.event_helper import EventHelper
+from models.district import District
 
 
 class TestEventGetShortName(unittest2.TestCase):
+    def setUp(self):
+        self.testbed = testbed.Testbed()
+        self.testbed.activate()
+        self.testbed.init_datastore_v3_stub()
+        self.testbed.init_memcache_stub()
+        self.testbed.init_taskqueue_stub(root_path=".")
+        ndb.get_context().clear_cache()  # Prevent data from leaking between tests
+
+        # Create districts
+        districts = []
+        for code in ['mar', 'isr', 'nc', 'ne', 'pnw', 'pch', 'chs', 'in', 'ont', 'fim', 'tx']:
+            year = 2017
+            districts.append(District(
+                id=District.renderKeyName(year, code),
+                year=year,
+                abbreviation=code,
+            ))
+        DistrictManipulator.createOrUpdate(districts)
+
+    def tearDown(self):
+        self.testbed.deactivate()
+
     def test_event_get_short_name(self):
         # Edge cases.
         self.assertEquals(EventHelper.getShortName("  { Random 2.718 stuff! }  "), "{ Random 2.718 stuff! }")
@@ -27,7 +54,7 @@ class TestEventGetShortName(unittest2.TestCase):
         self.assertEquals(EventHelper.getShortName(" MAR FIRST Robotics   Rosa Parks    FRC Tournament of Roses  "), "Rosa Parks")
         self.assertEquals(EventHelper.getShortName("Washington D.C. FIRST Robotics Region"), "Washington D.C.")
         self.assertEquals(EventHelper.getShortName("Washington D.C. FIRST Robotics Region."), "Washington D.C.")
-        self.assertEquals(EventHelper.getShortName("Washington D.C. FIRST Robotics Regiontonian"), "Washington D.C. FIRST Robotics Regiontonian") # Does not match "Region\b"
+        self.assertEquals(EventHelper.getShortName("Washington D.C. FIRST Robotics Regiontonian"), "Washington D.C. FIRST Robotics Regiontonian")  # Does not match "Region\b"
 
         # Tests from various years
         self.assertEqual(EventHelper.getShortName("FIRST Robotics Competition"), "FIRST Robotics Competition")
@@ -240,3 +267,15 @@ class TestEventGetShortName(unittest2.TestCase):
         self.assertEqual(EventHelper.getShortName("MAR District - Mt. Olive Event"), "Mt. Olive")
         self.assertEqual(EventHelper.getShortName("Israel Regional - see Site Info for additional information"), "Israel")
         self.assertEqual(EventHelper.getShortName("IN District - Kokomo City of Firsts Event sponsored by AndyMark"), "Kokomo City of Firsts")
+        # 2017 edge cases
+        self.assertEqual(EventHelper.getShortName("ONT District - McMaster University Event"), "McMaster University")
+        self.assertEqual(EventHelper.getShortName("FIRST Ontario Provincial Championship"), "Ontario")
+        self.assertEqual(EventHelper.getShortName("FIM District - Kettering University Event #1"), "Kettering University #1")
+        self.assertEqual(EventHelper.getShortName("ISR District Event #1"), "ISR #1")
+        # 2018 edge cases
+        self.assertEqual(EventHelper.getShortName("PNW District Clackamas Academy Event"), "Clackamas Academy")
+        # 2019 edge cases
+        self.assertEqual(EventHelper.getShortName("FMA District Hatboro-Horsham Event"), "Hatboro-Horsham")
+        self.assertEqual(EventHelper.getShortName("FIT District Austin Event"), "Austin")
+        # 2020 edge cases
+        self.assertEqual(EventHelper.getShortName("***SUSPENDED*** Silicon Valley Regional"), "Silicon Valley")

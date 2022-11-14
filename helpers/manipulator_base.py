@@ -2,6 +2,7 @@ from collections import defaultdict
 from google.appengine.ext import deferred
 from google.appengine.ext import ndb
 from helpers.cache_clearer import CacheClearer
+import tba_config
 
 
 class ManipulatorBase(object):
@@ -38,13 +39,34 @@ class ManipulatorBase(object):
 
     @classmethod
     def _clearCache(cls, models):
-        to_clear = defaultdict(set)
+        """
+        Makes a deferred call to clear cache.
+        Needs to save _affected_references and dirty flag
+        """
+        if not tba_config.CONFIG['database_query_cache'] and not tba_config.CONFIG['response_cache']:
+            return
+
+        all_affected_references = []
         for model in models:
-            if hasattr(model, '_affected_references') and getattr(model, 'dirty', False):
-                for cache_key, controller in cls.getCacheKeysAndControllers(model._affected_references):
-                    to_clear[controller].add(cache_key)
-            if hasattr(model, 'dirty'):
-                model.dirty = False
+            if getattr(model, 'dirty', False) and hasattr(model, '_affected_references'):
+                all_affected_references.append(model._affected_references)
+
+        if all_affected_references != []:
+            deferred.defer(
+                cls._clearCacheDeferred,
+                all_affected_references,
+                _queue='cache-clearing',
+                _transactional=ndb.in_transaction(),
+                _target='default',
+                _url='/_ah/queue/deferred_manipulator_clearCache'
+            )
+
+    @classmethod
+    def _clearCacheDeferred(cls, all_affected_references):
+        to_clear = defaultdict(set)
+        for affected_references in all_affected_references:
+            for cache_key, controller in cls.getCacheKeysAndControllers(affected_references):
+                to_clear[controller].add(cache_key)
 
         for controller, cache_keys in to_clear.items():
             controller.delete_cache_multi(cache_keys)
@@ -90,6 +112,9 @@ class ManipulatorBase(object):
         self._clearCache(models)
         if run_post_update_hook:
             self.runPostUpdateHook(models_to_put)
+        for model in models:
+            if model:  # Model can be None
+                model.dirty = False
         return self.delistify(models)
 
     @classmethod
@@ -100,7 +125,7 @@ class ManipulatorBase(object):
         If it does, update it and give it back. If it does not, give it back.
         """
         new_models = self.listify(new_models)
-        old_models = ndb.get_multi([ndb.Key(type(model).__name__, model.key_name) for model in new_models])
+        old_models = ndb.get_multi([model.key for model in new_models], use_cache=False)
         new_models = [self.updateMergeBase(new_model, old_model, auto_union=auto_union) for (new_model, old_model) in zip(new_models, old_models)]
         return self.delistify(new_models)
 
@@ -170,7 +195,7 @@ class ManipulatorBase(object):
         if models:
             post_delete_hook = getattr(cls, "postDeleteHook", None)
             if callable(post_delete_hook):
-                deferred.defer(post_delete_hook, models, _queue="post-update-hooks")
+                deferred.defer(post_delete_hook, models, _queue="post-update-hooks", _url='/_ah/queue/deferred_manipulator_runPostDeleteHook')
 
     @classmethod
     def runPostUpdateHook(cls, models):
@@ -182,4 +207,4 @@ class ManipulatorBase(object):
             if callable(post_update_hook):
                 updated_attrs = [model._updated_attrs if hasattr(model, '_updated_attrs') else [] for model in models]
                 is_new = [model._is_new if hasattr(model, '_is_new') else False for model in models]
-                deferred.defer(post_update_hook, models, updated_attrs, is_new, _queue="post-update-hooks")
+                deferred.defer(post_update_hook, models, updated_attrs, is_new, _queue="post-update-hooks", _url='/_ah/queue/deferred_manipulator_runPostUpdateHook')

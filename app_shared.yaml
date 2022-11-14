@@ -4,6 +4,7 @@ skip_files:
 - ^(.*/)?.*\.less.*
 - ^(.*/)?.*\.pyc.*
 - ^(.*/)?.*\.temp.*
+- ^(.*/)?.*/node_modules/.*$
 
 # directories
 - .git/*
@@ -15,6 +16,9 @@ skip_files:
 - test_data/*
 - tests/*
 - utils/*
+- react/*
+- node_modules/*
+- ops/*
 
 # specific files
 - .gitignore
@@ -22,5 +26,6 @@ skip_files:
 - do_compress.py
 - linter.py
 - pavement.py
-- requirements.txt
+- deploy_requirements.txt
+- travis_requirements.txt
 - run_tests.py

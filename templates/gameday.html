@@ -6,15 +6,17 @@
 <link rel="stylesheet" href="/css/tba_combined_style.gameday.min.css" type="text/css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-material-design/0.2.2/css/ripples.min.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-material-design/0.2.2/css/material-wfont.min.css" />
+<link href="//cdnjs.cloudflare.com/ajax/libs/featherlight/1.3.5/featherlight.min.css" rel="stylesheet">
+<link href="//cdnjs.cloudflare.com/ajax/libs/featherlight/1.3.5/featherlight.gallery.min.css" rel="stylesheet">
 {% endblock %}
 
 {% block meta_description %}Live competition page for the FIRST Robotics Competition.{% endblock %}
 
 {% block more_head_tags %}
-  <meta property="og:title" content="Gameday - Live FIRST Robotics Video">
+  <meta property="og:title" content="GameDay - Live FIRST Robotics Video">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="http://www.thebluealliance.com/gameday">
-  <meta property="og:image" content="http://www.thebluealliance.com/images/first_logo.png">
+  <meta property="og:url" content="https://www.thebluealliance.com/gameday">
+  <meta property="og:image" content="https://www.thebluealliance.com/images/logo_square_512.png">
   <meta property="og:description" content="Watch FIRST Robotics Competition events live!">
   <meta property="og:site_name" content="The Blue Alliance">
 {% endblock %}
@@ -42,7 +44,8 @@
           <li><a class="layout-choice layout_6" href="javascript:layout_6()">"1+3" View</a></li>
           <li><a class="layout-choice layout_4" href="javascript:layout_4()">"1+4" View</a></li>
           <li><a class="layout-choice layout_5" href="javascript:layout_5()">Hex View</a></li>
-          <li><a class="layout-choice layout_7" href="javascript:layout_7()">Octo View</a></li>
+          <li><a class="layout-choice layout_7" href="javascript:layout_7()">Octo-View</a></li>
+          <li><a class="layout-choice layout_8" href="javascript:layout_8()">Nona-View</a></li>
         </ul>
       </li>
 
@@ -242,9 +245,11 @@
   <div id="chat-info-background">
     <div id="chat-info" class="alert alert-warning"><button type="button" class="close" data-dismiss="alert">&times;</button><strong>Reminder:</strong> You need to log into a <a href="http://www.twitch.tv/" target="_blank">Twitch.tv</a> account in order to chat.</div>
   </div>
-  <iframe frameborder="0" scrolling="no" id="chat_embed" src="http://twitch.tv/chat/embed?channel=tbagameday&amp;popout_chat=true" height="100%" width="100%"></iframe>
+  <iframe frameborder="0" scrolling="no" id="chat_embed" src="https://twitch.tv/chat/embed?channel=tbagameday&amp;popout_chat=true&amp;parent=www.thebluealliance.com" height="100%" width="100%"></iframe>
 </div>
 {% endblock %}
+
+{% block admin_bar %}{% endblock %}
 
 {% block footer %}{% endblock %}
 
@@ -258,10 +263,12 @@
 <script src="//cdnjs.cloudflare.com/ajax/libs/fitvids/1.0.1/jquery.fitvids.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/jquery.tablesorter/2.5.2/jquery.tablesorter.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/typeahead.js/0.9.3/typeahead.min.js"></script>
-<script src="https://cdn.firebase.com/js/client/2.2.1/firebase.js"></script>
+<script src="https://www.gstatic.com/firebasejs/3.6.9/firebase.js"></script>
 <script type="text/javascript" src="/javascript/tba_combined_js.gameday.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-material-design/0.2.2/js/ripples.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-material-design/0.2.2/js/material.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/featherlight/1.3.5/featherlight.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/featherlight/1.3.5/featherlight.gallery.min.js"></script>
 {% endblock %}
 
 {% block ganalytics_timer %}
@@ -273,7 +280,7 @@
       return ((parseInt(t[1]) || 0) + 1) + ':00';
     })(tos.split(':').reverse());
     // Collect and send the time to Google Analytics
-    window.pageTracker ? pageTracker._trackEvent('gameday_time', 'Log', tos) : _gaq.push(['_trackEvent', 'gameday_time', 'Log', tos]);
+    ga('send', 'event', 'gameday_time', 'Log', tos);
     }, 60000);
   })('00');
 </script>

@@ -25,6 +25,13 @@ class Insight(ndb.Model):
     DIVISION_FINALISTS = 13
     REGIONAL_DISTRICT_WINNERS = 14
     SUCCESSFUL_ELIM_TEAMUPS = 15
+    MATCH_PREDICTIONS = 16
+    MATCH_AVERAGE_MARGINS_BY_WEEK = 17
+    ELIM_MATCH_AVERAGE_MARGINS_BY_WEEK = 18
+    WINNING_MARGIN_DISTRIBUTION = 19
+    ELIM_WINNING_MARGIN_DISTRIBUTION = 20
+    YEAR_SPECIFIC_BY_WEEK = 999
+    YEAR_SPECIFIC = 1000
 
     # Used for datastore keys! Don't change unless you know what you're doing.
     INSIGHT_NAMES = {MATCH_HIGHSCORE: 'match_highscore',
@@ -43,11 +50,18 @@ class Insight(ndb.Model):
                      DIVISION_FINALISTS: 'division_finalists',
                      REGIONAL_DISTRICT_WINNERS: 'regional_district_winners',
                      SUCCESSFUL_ELIM_TEAMUPS: 'successful_elim_teamups',
+                     MATCH_PREDICTIONS: 'match_predictions',
+                     MATCH_AVERAGE_MARGINS_BY_WEEK: 'match_average_margins_by_week',
+                     ELIM_MATCH_AVERAGE_MARGINS_BY_WEEK: 'elim_match_average_margins_by_week',
+                     WINNING_MARGIN_DISTRIBUTION: 'winning_margin_distribution',
+                     ELIM_WINNING_MARGIN_DISTRIBUTION: 'elim_winning_margin_distribution',
+                     YEAR_SPECIFIC_BY_WEEK: 'year_specific_by_week',
+                     YEAR_SPECIFIC: 'year_specific',
                      }
 
     name = ndb.StringProperty(required=True)  # general name used for sorting
     year = ndb.IntegerProperty(required=True)  # year this insight pertains to. year = 0 for overall insights
-    data_json = ndb.StringProperty(required=True, indexed=False)  # JSON dictionary of the data of the insight
+    data_json = ndb.TextProperty(required=True, indexed=False)  # JSON dictionary of the data of the insight
 
     created = ndb.DateTimeProperty(auto_now_add=True, indexed=False)
     updated = ndb.DateTimeProperty(auto_now=True, indexed=False)

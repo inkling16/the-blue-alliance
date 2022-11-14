@@ -25,7 +25,7 @@ list of the tuple.
 AWARD_MATCHING_STRINGS = [
     (AwardType.CHAIRMANS, (["chairman"], ["hon", "finalist"])),
     (AwardType.CHAIRMANS_HONORABLE_MENTION, (["chairman", "hon", "mention"], [])),
-    (AwardType.CHAIRMANS_HONORABLE_MENTION, (["chairman", "finalist"], [])),
+    (AwardType.CHAIRMANS_FINALIST, (["chairman", "finalist"], ["hon", "mention"])),
     (AwardType.ENGINEERING_INSPIRATION, (["engineering inspiration"], [])),
     (AwardType.WINNER, (["regional winner"], [])),
     (AwardType.WINNER, (["championship winner"], [])),
@@ -69,7 +69,7 @@ AWARD_MATCHING_STRINGS = [
     (AwardType.GRACIOUS_PROFESSIONALISM, (["gracious professionalism"], [])),
     (AwardType.HIGHEST_ROOKIE_SEED, (["highest rookie seed"], [])),
     (AwardType.IMAGERY, (["imagery"], [])),
-    (AwardType.INDUSTRIAL_DEESIGN, (["industrial design"], [])),
+    (AwardType.INDUSTRIAL_DESIGN, (["industrial design"], [])),
     (AwardType.MEDIA_AND_TECHNOLOGY, (["media", "technology"], [])),
     (AwardType.MAKE_IT_LOUD, (["make", "loud"], [])),
     (AwardType.SAFETY, (["safety"], [])),
@@ -120,6 +120,16 @@ AWARD_MATCHING_STRINGS = [
     (AwardType.GOLDEN_CORNDOG, (["golden corndog"], [])),
     (AwardType.MOST_IMPROVED_TEAM, (["most improved team"], [])),
     (AwardType.WILDCARD, (["wildcard"], [])),
+    (AwardType.AUTONOMOUS, (["autonomous"], [])),
+    (AwardType.INNOVATION_CHALLENGE_SEMI_FINALIST, (["innovation challenge semi-finalist"], [])),
+    (AwardType.ROOKIE_GAME_CHANGER, (["rookie game changer"], [])),
+    (AwardType.SKILLS_COMPETITION_WINNER, (["skills competition", "winner"], ["finalist"])),
+    (AwardType.SKILLS_COMPETITION_FINALIST, (["skills competition", "finalist"], [])),
+    (AwardType.ROOKIE_DESIGN, (["rookie design"], [])),
+    (AwardType.ENGINEERING_DESIGN, (["engineering design"], [])),
+    (AwardType.DESIGNERS, (["designer's"], [])),
+    (AwardType.CONCEPT, (["concept"], [])),
+    (AwardType.OTHER, (["other", "offseason award", "offseason event award"], [])),
 ]
 
 

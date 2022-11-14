@@ -34,12 +34,28 @@
             <td><input class="form-control" type="text" name="event_short" placeholder="ct" /></td>
         </tr>
         <tr>
-            <td>Event Type</td>
-            <td><input class="form-control" type="text" name="event_type_str" placeholder="Offseason" /></td>
+            <td>FIRST API Code</td>
+            <td><input class="form-control" type="text" name="first_code" placeholder="ct" /></td>
         </tr>
         <tr>
-            <td>Event Location</td>
-            <td><input class="form-control" type="text" name="location" placeholder="Hartford, CT" /></td>
+            <td>Event Type</td>
+            <td><select name="event_type">
+                {% for type, name in event_types.iteritems %}
+                  <option value="{{ type }}">{{ name }}</option>
+                {% endfor %}
+            </select></td>
+        </tr>
+        <tr>
+            <td>Event City</td>
+            <td><input class="form-control" type="text" name="city" placeholder="Hartford" /></td>
+        </tr>
+        <tr>
+            <td>Event State/Prov</td>
+            <td><input class="form-control" type="text" name="state_prov" placeholder="CT" /></td>
+        </tr>
+        <tr>
+            <td>Event Country</td>
+            <td><input class="form-control" type="text" name="country" placeholder="USA" /></td>
         </tr>
         <tr>
             <td>Official</td>

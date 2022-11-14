@@ -18,13 +18,15 @@ class TestAwardManipulator(unittest2.TestCase):
         self.testbed.activate()
         self.testbed.init_datastore_v3_stub()
         self.testbed.init_memcache_stub()
+        ndb.get_context().clear_cache()  # Prevent data from leaking between tests
+
         self.testbed.init_taskqueue_stub(root_path=".")
 
         self.event = Event(
-          id="2013casj",
-          event_short="casj",
-          year=2013,
-          event_type_enum=EventType.REGIONAL,
+            id="2013casj",
+            event_short="casj",
+            year=2013,
+            event_type_enum=EventType.REGIONAL,
         )
 
         self.old_award = Award(
@@ -81,7 +83,7 @@ class TestAwardManipulator(unittest2.TestCase):
         for r in award.recipient_json_list:
             self.assertTrue(json.loads(r) in [{'team_number': 111, 'awardee': None}, {'team_number': 234, 'awardee': None}])
 
-    def test_createOrUpdate(self):
+    def test_createOrUpdateupdate(self):
         AwardManipulator.createOrUpdate(self.old_award)
         self.assertOldAward(Award.get_by_id("2013casj_1"))
 

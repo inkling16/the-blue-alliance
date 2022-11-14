@@ -1,11 +1,15 @@
+import json
 import urlparse
 
 from google.appengine.ext import ndb
 
 from consts.district_type import DistrictType
+from helpers.website_helper import WebsiteHelper
+from models.district import District
 from models.district_team import DistrictTeam
-from models.team import Team
 from models.robot import Robot
+from models.team import Team
+from sitevars.website_blacklist import WebsiteBlacklist
 
 
 class FMSAPITeamDetailsParser(object):
@@ -27,38 +31,44 @@ class FMSAPITeamDetailsParser(object):
         ret_models = []
 
         for teamData in teams:
-            # concat city/state/country to get address
-            address = u"{}, {}, {}".format(teamData['city'], teamData['stateProv'], teamData['country'])
-
+            team_website = teamData.get('website', None)
             # Fix issue where FIRST's API returns dummy website for all teams
-            if teamData['website'] is not None and 'www.firstinspires.org' in teamData['website']:
+            if (team_website is not None and 'www.firstinspires.org' in team_website):
                 website = None
+            elif WebsiteBlacklist.is_blacklisted(team_website):
+                website = ''
             else:
-                raw_website = teamData.get('website', None)
-                website = urlparse.urlparse(raw_website, 'http').geturl() if raw_website else None
+                website = WebsiteHelper.format_url(team_website)
 
             team = Team(
                 id="frc{}".format(teamData['teamNumber']),
                 team_number=teamData['teamNumber'],
                 name=teamData['nameFull'],
                 nickname=teamData['nameShort'],
-                address=address,
+                school_name=teamData.get('schoolName'),
+                home_cmp=teamData.get('homeCMP').lower() if teamData.get('homeCMP') else None,
+                city=teamData['city'],
+                state_prov=teamData['stateProv'],
+                country=teamData['country'],
                 website=website,
                 rookie_year=teamData['rookieYear']
             )
 
             districtTeam = None
             if teamData['districtCode']:
-                districtAbbrev = DistrictType.abbrevs[teamData['districtCode'].lower()]
+                districtKey = District.renderKeyName(self.year, teamData['districtCode'].lower())
                 districtTeam = DistrictTeam(
-                    id=DistrictTeam.renderKeyName(self.year, districtAbbrev, team.key_name),
+                    id=DistrictTeam.renderKeyName(districtKey, team.key_name),
                     team=ndb.Key(Team, team.key_name),
                     year=self.year,
-                    district=districtAbbrev
+                    district_key=ndb.Key(District, districtKey),
                 )
 
             robot = None
-            if teamData['robotName']:
+            if teamData['robotName'] and self.year not in [2019]:
+                # FIRST did not support entering robot names  in 2019, so the
+                # data returned in the API that year is garbage. So let's not
+                # import it, with the hope that it'll come back in the future
                 robot = Robot(
                     id=Robot.renderKeyName(team.key_name, self.year),
                     team=ndb.Key(Team, team.key_name),

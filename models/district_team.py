@@ -1,6 +1,6 @@
 from google.appengine.ext import ndb
 
-from consts.district_type import DistrictType
+from models.district import District
 from models.team import Team
 
 
@@ -13,7 +13,8 @@ class DistrictTeam(ndb.Model):
 
     team = ndb.KeyProperty(kind=Team)
     year = ndb.IntegerProperty()
-    district = ndb.IntegerProperty()  # One of DistrictType constants
+    district = ndb.IntegerProperty()  # One of DistrictType constants, DEPRECATED, use district_key
+    district_key = ndb.KeyProperty(kind=District)
 
     created = ndb.DateTimeProperty(auto_now_add=True, indexed=False)
     updated = ndb.DateTimeProperty(auto_now=True, indexed=False)
@@ -31,14 +32,8 @@ class DistrictTeam(ndb.Model):
 
     @property
     def key_name(self):
-        return self.renderKeyName(self.year, self.district, self.team.id())
-
-    @property
-    def district_key(self):
-        districtAbbrev = DistrictType.type_abbrevs[self.district]
-        return '{}{}'.format(self.year, districtAbbrev)
+        return self.renderKeyName(self.district_key.id(), self.team.id())
 
     @classmethod
-    def renderKeyName(self, year, districtEnum, teamKey):
-        districtAbbrev = DistrictType.type_abbrevs[districtEnum]
-        return "{}{}_{}".format(year, districtAbbrev, teamKey)
+    def renderKeyName(self, districtKey, teamKey):
+        return "{}_{}".format(districtKey, teamKey)

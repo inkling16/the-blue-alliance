@@ -1,11 +1,15 @@
-from google.appengine.ext import ndb
-import datetime
-import json
-import pytz
-import re
+import datetime, json, re
 
+from consts.playoff_type import PlayoffType
 from consts.district_type import DistrictType
 from consts.event_type import EventType
+
+from google.appengine.ext import ndb
+from google.appengine.ext.ndb.tasklets import Future
+
+from models.district import District
+from models.event_details import EventDetails
+from models.location import Location
 
 
 class Event(ndb.Model):
@@ -15,26 +19,37 @@ class Event(ndb.Model):
     """
     name = ndb.StringProperty()
     event_type_enum = ndb.IntegerProperty(required=True)
-    short_name = ndb.StringProperty(indexed=False)  # Should not contain "Regional" or "Division", like "Hartford"
-    event_short = ndb.StringProperty(required=True, indexed=False)  # Smaller abbreviation like "CT"
+    short_name = ndb.TextProperty(indexed=False)  # Should not contain "Regional" or "Division", like "Hartford"
+    event_short = ndb.TextProperty(required=True, indexed=False)  # Smaller abbreviation like "CT"
+    first_code = ndb.StringProperty()  # Event code used in FIRST's API, if different from event_short
     year = ndb.IntegerProperty(required=True)
-    event_district_enum = ndb.IntegerProperty()
+    event_district_enum = ndb.IntegerProperty(default=DistrictType.NO_DISTRICT)  # Deprecated, use district_key instead
+    district_key = ndb.KeyProperty(kind=District)
     start_date = ndb.DateTimeProperty()
     end_date = ndb.DateTimeProperty()
-    venue = ndb.StringProperty(indexed=False)  # Name of the event venue
-    venue_address = ndb.StringProperty(indexed=False)  # Most detailed venue address (includes venue, street, and location separated by \n)
-    location = ndb.StringProperty(indexed=False)  # in the format "locality, region, country". similar to Team.address
+    playoff_type = ndb.IntegerProperty()
+
+    # venue, venue_addresss, city, state_prov, country, and postalcode are from FIRST
+    venue = ndb.TextProperty(indexed=False)  # Name of the event venue
+    venue_address = ndb.TextProperty(indexed=False)  # Most detailed venue address (includes venue, street, and location separated by \n)
+    city = ndb.StringProperty()  # Equivalent to locality. From FRCAPI
+    state_prov = ndb.StringProperty()  # Equivalent to region. From FRCAPI
+    country = ndb.StringProperty()  # From FRCAPI
+    postalcode = ndb.StringProperty()  # From ElasticSearch only. String because it can be like "95126-1215"
+    # Normalized address from the Google Maps API, constructed using the above
+    normalized_location = ndb.StructuredProperty(Location)
+
     timezone_id = ndb.StringProperty()  # such as 'America/Los_Angeles' or 'Asia/Jerusalem'
     official = ndb.BooleanProperty(default=False)  # Is the event FIRST-official?
     first_eid = ndb.StringProperty()  # from USFIRST
-    facebook_eid = ndb.StringProperty(indexed=False)  # from Facebook
-    custom_hashtag = ndb.StringProperty(indexed=False) #Custom HashTag
-    website = ndb.StringProperty(indexed=False)
+    parent_event = ndb.KeyProperty()  # This is the division -> event champs relationship
+    divisions = ndb.KeyProperty(repeated=True)  # event champs -> all divisions
+    facebook_eid = ndb.TextProperty(indexed=False)  # from Facebook
+    custom_hashtag = ndb.TextProperty(indexed=False)  # Custom HashTag
+    website = ndb.TextProperty(indexed=False)
     webcast_json = ndb.TextProperty(indexed=False)  # list of dicts, valid keys include 'type' and 'channel'
-    matchstats_json = ndb.TextProperty(indexed=False)  # for OPR, DPR, CCWM, etc.
-    rankings_json = ndb.TextProperty(indexed=False)
-    alliance_selections_json = ndb.TextProperty(indexed=False)  # Formatted as: [{'picks': [captain, pick1, pick2, 'frc123', ...], 'declines':[decline1, decline2, ...] }, {'picks': [], 'declines': []}, ... ]
-    district_points_json = ndb.TextProperty(indexed=False)
+    enable_predictions = ndb.BooleanProperty(default=False)
+    remap_teams = ndb.JsonProperty()  # Map of temporary team numbers to pre-rookie and B teams
 
     created = ndb.DateTimeProperty(auto_now_add=True, indexed=False)
     updated = ndb.DateTimeProperty(auto_now=True, indexed=False)
@@ -45,19 +60,18 @@ class Event(ndb.Model):
         self._affected_references = {
             'key': set(),
             'year': set(),
-            'event_district_abbrev': set(),
-            'event_district_key': set()
+            'district_key': set()
         }
-        self._alliance_selections = None
         self._awards = None
-        self._district_points = None
+        self._details = None
+        self._location = None
+        self._city_state_country = None
         self._matches = None
-        self._matchstats = None
-        self._rankings = None
         self._teams = None
         self._venue_address_safe = None
         self._webcast = None
         self._updated_attrs = []  # Used in EventManipulator to track what changed
+        self._week = None
         super(Event, self).__init__(*args, **kw)
 
     @ndb.tasklet
@@ -67,15 +81,10 @@ class Event(ndb.Model):
 
     @property
     def alliance_selections(self):
-        """
-        Lazy load alliance_selections JSON
-        """
-        if self._alliance_selections is None:
-            try:
-                self._alliance_selections = json.loads(self.alliance_selections_json)
-            except Exception, e:
-                self._alliance_selections = None
-        return self._alliance_selections
+        if self.details is None:
+            return None
+        else:
+            return self.details.alliance_selections
 
     @property
     def alliance_teams(self):
@@ -98,39 +107,84 @@ class Event(ndb.Model):
         return self._awards
 
     @property
+    def details(self):
+        if self._details is None:
+            self._details = EventDetails.get_by_id(self.key.id())
+        elif type(self._details) == Future:
+            self._details = self._details.get_result()
+        return self._details
+
+    def prep_details(self):
+        if self._details is None:
+            self._details = ndb.Key(EventDetails, self.key.id()).get_async()
+
+    @property
     def district_points(self):
-        """
-        Lazy load district_points JSON
-        """
-        if self._district_points is None:
-            try:
-                self._district_points = json.loads(self.district_points_json)
-            except Exception, e:
-                self._district_points = None
-        return self._district_points
+        if self.details is None:
+            return None
+        else:
+            return self.details.district_points
+
+    @property
+    def playoff_advancement(self):
+        if self.details is None:
+            return None
+        else:
+            return self.details.playoff_advancement.get(
+                "advancement") if self.details.playoff_advancement else None
+
+    @property
+    def playoff_bracket(self):
+        if self.details is None:
+            return None
+        else:
+            return self.details.playoff_advancement.get(
+                "bracket") if self.details.playoff_advancement else None
 
     @ndb.tasklet
     def get_matches_async(self):
-        from database import match_query
-        self._matches = yield match_query.EventMatchesQuery(self.key_name).fetch_async()
+        if self._matches is None:
+            from database import match_query
+            self._matches = yield match_query.EventMatchesQuery(self.key_name).fetch_async()
+
+    def prep_matches(self):
+        if self._matches is None:
+            from database import match_query
+            self._matches = match_query.EventMatchesQuery(self.key_name).fetch_async()
 
     @property
     def matches(self):
         if self._matches is None:
-            if self._matches is None:
-                self.get_matches_async().wait()
+            self.get_matches_async().wait()
+        elif type(self._matches) == Future:
+            self._matches = self._matches.get_result()
         return self._matches
 
-    def withinDays(self, negative_days_before, days_after):
-        if not self.start_date or not self.end_date:
-            return False
+    def time_as_utc(self, time):
+        import pytz
+        if self.timezone_id is not None:
+            tz = pytz.timezone(self.timezone_id)
+            try:
+                time = time - tz.utcoffset(time)
+            except (pytz.NonExistentTimeError, pytz.AmbiguousTimeError):  # may happen during DST
+                time = time - tz.utcoffset(time + datetime.timedelta(hours=1))  # add offset to get out of non-existant time
+        return time
+
+    def local_time(self):
+        import pytz
         now = datetime.datetime.now()
         if self.timezone_id is not None:
             tz = pytz.timezone(self.timezone_id)
             try:
                 now = now + tz.utcoffset(now)
-            except pytz.NonExistentTimeError:  # may happen during DST
+            except (pytz.NonExistentTimeError, pytz.AmbiguousTimeError):  # may happen during DST
                 now = now + tz.utcoffset(now + datetime.timedelta(hours=1))  # add offset to get out of non-existant time
+        return now
+
+    def withinDays(self, negative_days_before, days_after):
+        if not self.start_date or not self.end_date:
+            return False
+        now = self.local_time()
         after_start = self.start_date.date() + datetime.timedelta(days=negative_days_before) <= now.date()
         before_end = self.end_date.date() + datetime.timedelta(days=days_after) >= now.date()
 
@@ -149,11 +203,78 @@ class Event(ndb.Model):
 
     @property
     def past(self):
-        return self.end_date.date() < datetime.date.today() and not self.within_a_day
+        return self.end_date.date() < self.local_time().date() and not self.now
 
     @property
     def future(self):
-        return self.start_date.date() > datetime.date.today() and not self.within_a_day
+        return self.start_date.date() > self.local_time().date() and not self.now
+
+    @property
+    def starts_today(self):
+        return self.start_date.date() == self.local_time().date()
+
+    @property
+    def ends_today(self):
+        return self.end_date.date() == self.local_time().date()
+
+    @property
+    def week(self):
+        """
+        Returns the week of the event relative to the first official season event as an integer
+        Returns None if the event is not of type NON_CMP_EVENT_TYPES or is not official
+        """
+        if self.event_type_enum not in EventType.NON_CMP_EVENT_TYPES or not self.official:
+            return None
+
+        if self._week:
+            return self._week
+
+        # Cache week_start for the same context
+        from context_cache import context_cache
+        cache_key = '{}_season_start:{}'.format(self.year, ndb.get_context().__hash__())
+        season_start = context_cache.get(cache_key)
+
+        if season_start is None:
+            e = Event.query(
+                Event.year==self.year,
+                Event.event_type_enum.IN(EventType.NON_CMP_EVENT_TYPES),
+                Event.start_date!=None
+            ).order(Event.start_date).fetch(1, projection=[Event.start_date])
+            if e:
+                first_start_date = e[0].start_date
+
+                days_diff = 0
+                # Before 2018, event weeks start on Wednesdays
+                if self.year < 2018:
+                    days_diff = 2  # 2 is Wednesday
+
+                # Find the closest start weekday (Monday or Wednesday) to the first event - this is our season start
+                diff_from_week_start = (first_start_date.weekday() - days_diff) % 7
+                diff_from_week_start = min([diff_from_week_start, diff_from_week_start - 7], key=abs)
+
+                season_start = first_start_date - datetime.timedelta(days=diff_from_week_start)
+            else:
+                season_start = None
+        context_cache.set(cache_key, season_start)
+
+        if self._week is None and season_start is not None:
+            # Round events that occur just before the official start-of-season to the closest week
+            days = max((self.start_date - season_start).days, 0)
+            self._week = days / 7
+
+        return self._week
+
+    @property
+    def week_str(self):
+        if self.week is None:
+            return None
+        if self.year == 2016:
+            return "Week {}".format(0.5 if self.week == 0 else self.week)
+        return "Week {}".format(self.week + 1)
+
+    @property
+    def is_season_event(self):
+        return self.event_type_enum in EventType.SEASON_EVENT_TYPES
 
     @ndb.tasklet
     def get_teams_async(self):
@@ -180,27 +301,56 @@ class Event(ndb.Model):
 
     @property
     def matchstats(self):
-        """
-        Lazy load parsing matchstats JSON
-        """
-        if self._matchstats is None:
-            try:
-                self._matchstats = json.loads(self.matchstats_json)
-            except Exception, e:
-                self._matchstats = None
-        return self._matchstats
+        if self.details is None:
+            return None
+        else:
+            return self.details.matchstats
 
     @property
     def rankings(self):
-        """
-        Lazy load parsing rankings JSON
-        """
-        if self._rankings is None:
-            try:
-                self._rankings = [[str(el) for el in row] for row in json.loads(self.rankings_json)]
-            except Exception, e:
-                self._rankings = None
-        return self._rankings
+        if self.details is None:
+            return None
+        else:
+            return self.details.rankings
+
+    @property
+    def location(self):
+        if self._location is None:
+            split_location = []
+            if self.city:
+                split_location.append(self.city)
+            if self.state_prov:
+                if self.postalcode:
+                    split_location.append(self.state_prov + ' ' + self.postalcode)
+                else:
+                    split_location.append(self.state_prov)
+            if self.country:
+                split_location.append(self.country)
+            self._location = ', '.join(split_location)
+        return self._location
+
+    @property
+    def city_state_country(self):
+        if not self._city_state_country and self.nl:
+            self._city_state_country = self.nl.city_state_country
+
+        if not self._city_state_country:
+            location_parts = []
+            if self.city:
+                location_parts.append(self.city)
+            if self.state_prov:
+                location_parts.append(self.state_prov)
+            if self.country:
+                country = self.country
+                if self.country == 'US':
+                    country = 'USA'
+                location_parts.append(country)
+            self._city_state_country = ', '.join(location_parts)
+        return self._city_state_country
+
+    @property
+    def nl(self):
+        return self.normalized_location
 
     @property
     def venue_or_venue_from_address(self):
@@ -234,9 +384,61 @@ class Event(ndb.Model):
         if self._webcast is None:
             try:
                 self._webcast = json.loads(self.webcast_json)
+
+                # Sort firstinspires channels to the front, keep the order of the rest
+                self._webcast = sorted(self._webcast, key=lambda w: 0 if (w['type'] == 'twitch' and w['channel'].startswith('firstinspires')) else 1)
             except Exception, e:
                 self._webcast = None
         return self._webcast
+
+    @property
+    def webcast_status(self):
+        from helpers.webcast_online_helper import WebcastOnlineHelper
+        WebcastOnlineHelper.add_online_status(self.current_webcasts)
+
+        overall_status = 'offline'
+        for webcast in self.current_webcasts:
+            status = webcast.get('status')
+            if status == 'online':
+                overall_status = 'online'
+                break
+            elif status == 'unknown':
+                overall_status = 'unknown'
+        return overall_status
+
+    @property
+    def current_webcasts(self):
+        if not self.webcast or not self.within_a_day:
+            return []
+
+        # Filter by date
+        current_webcasts = []
+        for webcast in self.webcast:
+            if 'date' in webcast:
+                webcast_datetime = datetime.datetime.strptime(webcast['date'], "%Y-%m-%d")
+                if self.local_time().date() == webcast_datetime.date():
+                    current_webcasts.append(webcast)
+            else:
+                current_webcasts.append(webcast)
+        return current_webcasts
+
+    @property
+    def online_webcasts(self):
+        current_webcasts = self.current_webcasts
+
+        from helpers.webcast_online_helper import WebcastOnlineHelper
+        WebcastOnlineHelper.add_online_status(current_webcasts)
+
+        return filter(lambda x: x.get('status', '') != 'offline', current_webcasts if current_webcasts else [])
+
+    @property
+    def has_first_official_webcast(self):
+        return any([('firstinspires' in w['channel']) for w in self.webcast]) if self.webcast else False
+
+    @property
+    def division_keys_json(self):
+        keys = [key.id() for key in self.divisions]
+        return json.dumps(keys)
 
     @property
     def key_name(self):
@@ -265,17 +467,7 @@ class Event(ndb.Model):
         Returns the URL pattern for the link to watch webcasts in Gameday
         """
         if self.webcast:
-            gameday_link = '/gameday'
-            view_num = 0
-            for webcast in self.webcast:
-                if view_num == 0:
-                    gameday_link += '#'
-                else:
-                    gameday_link += '&'
-                if 'type' in webcast and 'channel' in webcast:
-                    gameday_link += 'view_' + str(view_num) + '=' + self.key_name + '-' + str(view_num + 1)
-                view_num += 1
-            return gameday_link
+            return "/gameday/{}".format(self.key_name)
         else:
             return None
 
@@ -290,34 +482,103 @@ class Event(ndb.Model):
             return "frc" + self.event_short
 
     # Depreciated, still here to keep GAE clean.
-    webcast_url = ndb.StringProperty(indexed=False)
+    webcast_url = ndb.TextProperty(indexed=False)
 
     @classmethod
     def validate_key_name(self, event_key):
-        key_name_regex = re.compile(r'^[1-9]\d{3}[a-z]+[0-9]?$')
+        key_name_regex = re.compile(r"^[1-9]\d{3}(\d{2})?[a-z]+[0-9]{0,3}$")
         match = re.match(key_name_regex, event_key)
         return True if match else False
 
     @property
     def event_district_str(self):
-        return DistrictType.type_names.get(self.event_district_enum, None)
+        from database.district_query import DistrictQuery
+        if self.district_key is None:
+            return None
+        district = DistrictQuery(self.district_key.id()).fetch()
+        return district.display_name if district else None
 
     @property
     def event_district_abbrev(self):
-        return DistrictType.type_abbrevs.get(self.event_district_enum, None)
+        if self.district_key is None:
+            return None
+        else:
+            return self.district_key.id()[4:]
 
     @property
     def event_district_key(self):
-        district_abbrev = DistrictType.type_abbrevs.get(self.event_district_enum, None)
-        if district_abbrev is None:
+        if self.district_key is None:
             return None
         else:
-            return '{}{}'.format(self.year, district_abbrev)
+            return self.district_key.id()
 
     @property
     def event_type_str(self):
-        return EventType.type_names[self.event_type_enum]
+        return EventType.type_names.get(self.event_type_enum)
 
     @property
     def display_name(self):
         return self.name if self.short_name is None else self.short_name
+
+    @property
+    def normalized_name(self):
+        if self.event_type_enum == EventType.CMP_FINALS:
+            if self.year >= 2017:
+                return '{} {}'.format(self.city, 'Championship')
+            else:
+                return 'Championship'
+        elif self.short_name and self.event_type_enum != EventType.FOC:
+            if self.event_type_enum == EventType.OFFSEASON:
+                return self.short_name
+            else:
+                return '{} {}'.format(self.short_name, EventType.short_type_names[self.event_type_enum])
+        else:
+            return self.name
+
+    @property
+    def first_api_code(self):
+        if self.first_code is None:
+            return self.event_short.upper()
+        return self.first_code.upper()
+
+    @property
+    def is_in_season(self):
+        """
+        If the Event is of a regular season type.
+        """
+        return self.event_type_enum in EventType.SEASON_EVENT_TYPES
+
+    @property
+    def is_offseason(self):
+        """
+        'Offseason' events include preseason, offseason, unlabeled events.
+        """
+        return not self.is_in_season
+
+    @property
+    def next_match(self):
+        from helpers.match_helper import MatchHelper
+        upcoming_matches = MatchHelper.upcomingMatches(self.matches, 1)
+        if upcoming_matches:
+            return upcoming_matches[0]
+        else:
+            return None
+
+    @property
+    def previous_match(self):
+        from helpers.match_helper import MatchHelper
+        recent_matches = MatchHelper.recentMatches(self.matches, 1)[0]
+        if recent_matches:
+            return recent_matches[0]
+        else:
+            return None
+
+    def team_awards(self):
+        # Returns a dictionary of awards for teams
+        team_awards = {}  # Key is a Team key, value is an array of Awards that team won
+        for award in self.awards:
+            for team_key in award.team_list:
+                a = team_awards.get(team_key, [])
+                a.append(award)
+                team_awards[team_key] = a
+        return team_awards

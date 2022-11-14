@@ -13,6 +13,8 @@ class DistrictType(object):
     CHESAPEAKE = 6
     NORTH_CAROLINA = 7
     GEORGIA = 8
+    ONTARIO = 9
+    ISRAEL = 10
 
     # Used for rendering
     type_names = {
@@ -25,6 +27,8 @@ class DistrictType(object):
         CHESAPEAKE: 'Chesapeake',
         NORTH_CAROLINA: 'North Carolina',
         GEORGIA: 'Georgia',
+        ONTARIO: 'Ontario',
+        ISRAEL: 'Israel',
     }
 
     # make sure abbreviations stay all lower case
@@ -38,9 +42,11 @@ class DistrictType(object):
         CHESAPEAKE: 'chs',
         NORTH_CAROLINA: 'nc',
         GEORGIA: 'pch',
+        ONTARIO: 'ont',
+        ISRAEL: 'isr',
     }
 
-    # Names used on the FIRST website
+    # Names used on the FIRST website & FRC API
     names = {
         'FIRST in Michigan': MICHIGAN,
         'Mid-Atlantic Robotics': MID_ATLANTIC,
@@ -50,19 +56,8 @@ class DistrictType(object):
         'FIRST Chesapeake': CHESAPEAKE,
         'North Carolina': NORTH_CAROLINA,
         'Georgia': GEORGIA,
-    }
-
-    # Names used by FIRST ElasticSearch
-    elasticsearch_names = {
-        'Michigan': MICHIGAN,
-        'Mid-Atlantic': MID_ATLANTIC,
-        'New England': NEW_ENGLAND,
-        'NE FIRST': NEW_ENGLAND,
-        'Pacific Northwest': PACIFIC_NORTHWEST,
-        'Indiana': INDIANA,
-        'Chesapeake': CHESAPEAKE,
-        'NC FIRST': NORTH_CAROLINA,
-        'Peachtree': GEORGIA,
+        'FIRST Ontario': ONTARIO,
+        'Israel': ISRAEL,
     }
 
     # make sure abbreviations stay all lower case
@@ -75,4 +70,6 @@ class DistrictType(object):
         'chs': CHESAPEAKE,
         'nc': NORTH_CAROLINA,
         'pch': GEORGIA,
+        'ont': ONTARIO,
+        'isr': ISRAEL,
     }

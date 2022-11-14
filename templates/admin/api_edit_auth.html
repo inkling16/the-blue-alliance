@@ -15,8 +15,24 @@
             <td><input type="text" name="description" value="{{auth.description}}" /></td>
         </tr>
         <tr>
+            <td>Owner Email</td>
+            <td><input class="form-control" type="text" name="owner" placeholder="foo@bar.com" {% if auth.owner %}value="{{ auth.owner.get.email }}"{% endif %}/></td>
+        </tr>
+        <tr>
+            <td>Expiration</td>
+            <td><input class="form-control" type="text" name="expiration" placeholder="2017-06-30" {% if auth.expiration %}value="{{ auth.expiration|date:"Y-m-d" }}"{% endif %}/></td>
+        </tr>
+        <tr>
+            <td>Allow Admin Access</td>
+            <td><input type="checkbox" name="allow_admin" {% if auth.allow_admin %}checked{% endif %}></td>
+        </tr>
+        <tr>
             <td>Events</td>
             <td><input type="text" name="event_list_str" value="{{auth.event_list_str}}" /></td>
+        </tr>
+        <tr>
+            <td>Allow Event Info Edit</td>
+            <td><input type="checkbox" name="allow_edit_info" {% if auth.can_edit_event_info %}checked{% endif %}></td>
         </tr>
         <tr>
             <td>Allow Event Teams Edit</td>
@@ -37,9 +53,14 @@
         <tr>
             <td>Allow Event Awards Edit</td>
             <td><input type="checkbox" name="allow_edit_awards" {% if auth.can_edit_event_awards %}checked{% endif %}></td>
-        </tr>        <tr>
+        </tr>
+        <tr>
             <td>Allow Match Video Edit</td>
             <td><input type="checkbox" name="allow_edit_match_video" {% if auth.can_edit_match_video %}checked{% endif %}></td>
+        </tr>
+        <tr>
+            <td>Allow Zebra MotionWorks Edit</td>
+            <td><input type="checkbox" name="allow_edit_zebra_motionworks" {% if auth.can_edit_zebra_motionworks %}checked{% endif %}></td>
         </tr>
     </table>
 

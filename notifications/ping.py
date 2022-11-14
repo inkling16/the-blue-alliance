@@ -5,7 +5,6 @@ from notifications.base_notification import BaseNotification
 class PingNotification(BaseNotification):
 
     _track_call = False
-    _push_firebase = False
 
     @property
     def _type(self):
@@ -13,7 +12,7 @@ class PingNotification(BaseNotification):
 
     def _build_dict(self):
         data = {}
-        data['message_type'] = NotificationType.type_names[self._type]
+        data['notification_type'] = NotificationType.type_names[self._type]
         data['message_data'] = {'title': "Test Message",
                                 'desc': "This is a test message ensuring your device can recieve push messages from The Blue Alliance."}
         return data

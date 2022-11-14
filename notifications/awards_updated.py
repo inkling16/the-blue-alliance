@@ -6,10 +6,10 @@ from notifications.base_notification import BaseNotification
 
 class AwardsUpdatedNotification(BaseNotification):
 
+    _priority = 'high'
+
     def __init__(self, event):
         self.event = event
-        self._event_feed = event.key_name
-        self._district_feed = event.event_district_abbrev
 
     @property
     def _type(self):
@@ -17,7 +17,7 @@ class AwardsUpdatedNotification(BaseNotification):
 
     def _build_dict(self):
         data = {}
-        data['message_type'] = NotificationType.type_names[self._type]
+        data['notification_type'] = NotificationType.type_names[self._type]
         data['message_data'] = {}
         data['message_data']['event_name'] = self.event.name
         data['message_data']['event_key'] = self.event.key_name

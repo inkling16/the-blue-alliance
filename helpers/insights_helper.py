@@ -11,11 +11,13 @@ from consts.event_type import EventType
 
 from models.insight import Insight
 from models.event import Event
+from models.event_details import EventDetails
 from models.award import Award
 from models.match import Match
 
 from helpers.event_helper import EventHelper
-from helpers.event_helper import OFFSEASON_EVENTS_LABEL
+from helpers.event_helper import OFFSEASON_EVENTS_LABEL, PRESEASON_EVENTS_LABEL
+from helpers.event_insights_helper import EventInsightsHelper
 
 
 class InsightsHelper(object):
@@ -33,7 +35,7 @@ class InsightsHelper(object):
         events_by_week = EventHelper.groupByWeek(official_events)
         week_event_matches = []  # Tuples of: (week, events) where events are tuples of (event, matches)
         for week, events in events_by_week.items():
-            if week == OFFSEASON_EVENTS_LABEL:
+            if week in {OFFSEASON_EVENTS_LABEL, PRESEASON_EVENTS_LABEL}:
                 continue
             week_events = []
             for event in events:
@@ -47,8 +49,11 @@ class InsightsHelper(object):
         insights += self._calculateHighscoreMatchesByWeek(week_event_matches, year)
         insights += self._calculateHighscoreMatches(week_event_matches, year)
         insights += self._calculateMatchAveragesByWeek(week_event_matches, year)
+        insights += self._calculateMatchWinningMarginByWeek(week_event_matches, year)
         insights += self._calculateScoreDistribution(week_event_matches, year)
+        insights += self._calculateWinningMarginDistribution(week_event_matches, year)
         insights += self._calculateNumMatches(week_event_matches, year)
+        insights += self._calculateYearSpecific(week_event_matches, year)
         return insights
 
     @classmethod
@@ -60,7 +65,15 @@ class InsightsHelper(object):
         blue_banner_award_keys_future = Award.query(
             Award.year == year,
             Award.award_type_enum.IN(AwardType.BLUE_BANNER_AWARDS),
-            Award.event_type_enum.IN({EventType.REGIONAL, EventType.DISTRICT, EventType.DISTRICT_CMP, EventType.CMP_DIVISION, EventType.CMP_FINALS})
+            Award.event_type_enum.IN({
+                EventType.REGIONAL,
+                EventType.DISTRICT,
+                EventType.DISTRICT_CMP_DIVISION,
+                EventType.DISTRICT_CMP,
+                EventType.CMP_DIVISION,
+                EventType.CMP_FINALS,
+                EventType.FOC,
+                EventType.REMOTE})
         ).fetch_async(10000, keys_only=True)
         cmp_finalist_award_keys_future = Award.query(
             Award.year == year,
@@ -82,6 +95,69 @@ class InsightsHelper(object):
         return insights
 
     @classmethod
+    def doPredictionInsights(self, year):
+        """
+        Calculate aggregate prediction stats for all season events for a year.
+        """
+        import numpy as np
+
+        events = Event.query(
+            Event.event_type_enum.IN(EventType.SEASON_EVENT_TYPES),
+            Event.year==(int(year))).fetch()
+        for event in events:
+            event.prep_details()
+            event.prep_matches()
+
+        has_insights = False
+        correct_matches_count = defaultdict(int)
+        total_matches_count = defaultdict(int)
+        brier_scores = defaultdict(list)
+        correct_matches_count_cmp = defaultdict(int)
+        total_matches_count_cmp = defaultdict(int)
+        brier_scores_cmp = defaultdict(list)
+        for event in events:
+            predictions = event.details.predictions if event.details else None
+            if predictions:
+                has_insights = True
+                is_cmp = event.event_type_enum in EventType.CMP_EVENT_TYPES
+                if 'match_predictions' in predictions:
+                    for match in event.matches:
+                        if match.has_been_played:
+                            level = 'qual' if match.comp_level == 'qm' else 'playoff'
+
+                            total_matches_count[level] += 1
+                            if is_cmp:
+                                total_matches_count_cmp[level] += 1
+
+                            predicted_match = predictions['match_predictions'][level].get(match.key.id())
+                            if predicted_match and match.winning_alliance == predicted_match['winning_alliance']:
+                                correct_matches_count[level] += 1
+                                if is_cmp:
+                                    correct_matches_count_cmp[level] += 1
+
+                for level in ['qual', 'playoff']:
+                    if predictions.get('match_prediction_stats'):
+                        bs = predictions.get('match_prediction_stats', {}).get(level, {}).get('brier_scores', {})
+                        if bs:
+                            brier_scores[level].append(bs['win_loss'])
+                            if is_cmp:
+                                brier_scores_cmp[level].append(bs['win_loss'])
+
+        if not has_insights:
+            data = None
+
+        data = defaultdict(dict)
+        for level in ['qual', 'playoff']:
+            data[level]['mean_brier_score'] = np.mean(brier_scores[level]) if brier_scores[level] else None
+            data[level]['correct_matches_count'] = correct_matches_count[level]
+            data[level]['total_matches_count'] = total_matches_count[level]
+            data[level]['mean_brier_score_cmp'] = np.mean(brier_scores_cmp[level]) if brier_scores_cmp[level] else None
+            data[level]['correct_matches_count_cmp'] = correct_matches_count_cmp[level]
+            data[level]['total_matches_count_cmp'] = total_matches_count_cmp[level]
+
+        return [self._createInsight(data, Insight.INSIGHT_NAMES[Insight.MATCH_PREDICTIONS], year)]
+
+    @classmethod
     def _createInsight(self, data, name, year):
         """
         Create Insight object given data, name, and year
@@ -100,7 +176,10 @@ class InsightsHelper(object):
                 'verbose_name': match.verbose_name,
                 'event_name': event.name,
                 'alliances': match.alliances,
-                'winning_alliance': match.winning_alliance
+                'score_breakdown': match.score_breakdown,
+                'winning_alliance': match.winning_alliance,
+                'tba_video': match.tba_video,
+                'youtube_videos_formatted': match.youtube_videos_formatted
                 }
 
     @classmethod
@@ -113,6 +192,18 @@ class InsightsHelper(object):
         temp = defaultdict(list)
         for team, numWins in wins_dict:
             temp[numWins].append(team)
+        return sorted(temp.items(), key=lambda pair: int(pair[0]), reverse=True)  # Sort by win number
+
+    @classmethod
+    def _sortTeamYearWinsDict(self, wins_dict):
+        """
+        Sorts dicts with key: number of wins, value: list of (team, years)
+        by number of wins and by team number
+        """
+        wins_dict = sorted(wins_dict.items(), key=lambda pair: int(pair[0][3:]))  # Sort by team number
+        temp = defaultdict(list)
+        for team, year_wins in wins_dict:
+            temp[len(year_wins)].append((team, sorted(year_wins)))
         return sorted(temp.items(), key=lambda pair: int(pair[0]), reverse=True)  # Sort by win number
 
     @classmethod
@@ -157,19 +248,45 @@ class InsightsHelper(object):
         """
         Returns an Insight where the data is list of highest scoring matches
         """
-        highscore_matches = []  # list of matches (if there are ties)
-        highscore = 0
+        highscore_matches = {
+            'qual': [],
+            'playoff': [],
+            'overall': [],
+        }  # dict of list of matches (if there are ties)
+        highscore = {
+            'qual': 0,
+            'playoff': 0,
+            'overall': 0,
+        }
         for _, week_events in week_event_matches:
             for event, matches in week_events:
                 for match in matches:
+                    comp_level = 'qual' if match.comp_level == 'qm' else 'playoff'
+                    match_data = self._generateMatchData(match, event)
+
                     redScore = int(match.alliances['red']['score'])
                     blueScore = int(match.alliances['blue']['score'])
+
+                    # Overall, including penalties
                     maxScore = max(redScore, blueScore)
-                    if maxScore >= highscore:
-                        if maxScore > highscore:
-                            highscore_matches = []
-                        highscore_matches.append(self._generateMatchData(match, event))
-                        highscore = maxScore
+                    if maxScore >= highscore['overall']:
+                        if maxScore > highscore['overall']:
+                            highscore_matches['overall'] = []
+                        highscore_matches['overall'].append(match_data)
+                        highscore['overall'] = maxScore
+
+                    # Penalty free, if possible
+                    if year >= 2017:
+                        if match.score_breakdown:
+                            redScore -= match.score_breakdown['red'].get('foulPoints', 0)
+                            blueScore -= match.score_breakdown['blue'].get('foulPoints', 0)
+
+                    maxScore = max(redScore, blueScore)
+                    if maxScore >= highscore[comp_level]:
+                        if maxScore > highscore[comp_level]:
+                            highscore_matches[comp_level] = []
+                        highscore_matches[comp_level].append(match_data)
+                        highscore[comp_level] = maxScore
 
         insight = None
         if highscore_matches != []:
@@ -195,6 +312,8 @@ class InsightsHelper(object):
             elim_num_matches_by_week = 0
             for _, matches in week_events:
                 for match in matches:
+                    if not match.has_been_played:
+                        continue
                     redScore = int(match.alliances['red']['score'])
                     blueScore = int(match.alliances['blue']['score'])
                     week_match_sum += redScore + blueScore
@@ -216,6 +335,59 @@ class InsightsHelper(object):
             insights.append(self._createInsight(match_averages_by_week, Insight.INSIGHT_NAMES[Insight.MATCH_AVERAGES_BY_WEEK], year))
         if elim_match_averages_by_week != []:
             insights.append(self._createInsight(elim_match_averages_by_week, Insight.INSIGHT_NAMES[Insight.ELIM_MATCH_AVERAGES_BY_WEEK], year))
+        return insights
+
+    @classmethod
+    def _calculateMatchWinningMarginByWeek(self, week_event_matches, year):
+        """
+        Returns a list of Insights, one for all data and one for elim data
+        The data for each Insight is a list of tuples:
+        (week string, match average margins)
+        """
+        match_average_margins_by_week = []  # tuples: week, average margin
+        elim_match_average_margins_by_week = []  # tuples: week, average margin
+        for week, week_events in week_event_matches:
+            week_match_margin_sum = 0
+            num_matches_by_week = 0
+            elim_week_match_margin_sum = 0
+            elim_num_matches_by_week = 0
+            for _, matches in week_events:
+                for match in matches:
+                    if not match.has_been_played:
+                        continue
+                    redScore = int(match.alliances['red']['score'])
+                    blueScore = int(match.alliances['blue']['score'])
+                    week_match_margin_sum += abs(redScore - blueScore)
+                    num_matches_by_week += 1
+                    if match.comp_level in Match.ELIM_LEVELS:
+                        elim_week_match_margin_sum += abs(redScore - blueScore)
+                        elim_num_matches_by_week += 1
+
+            if num_matches_by_week != 0:
+                week_average = float(week_match_margin_sum) / num_matches_by_week
+                match_average_margins_by_week.append((week, week_average))
+
+            if elim_num_matches_by_week != 0:
+                elim_week_average = float(elim_week_match_margin_sum) / elim_num_matches_by_week
+                elim_match_average_margins_by_week.append((week, elim_week_average))
+
+        insights = []
+        if match_average_margins_by_week != []:
+            insights.append(
+                self._createInsight(
+                    match_average_margins_by_week,
+                    Insight.INSIGHT_NAMES[Insight.MATCH_AVERAGE_MARGINS_BY_WEEK],
+                    year
+                )
+            )
+        if elim_match_average_margins_by_week != []:
+            insights.append(
+                self._createInsight(
+                    elim_match_average_margins_by_week,
+                    Insight.INSIGHT_NAMES[Insight.ELIM_MATCH_AVERAGE_MARGINS_BY_WEEK],
+                    year
+                )
+            )
         return insights
 
     @classmethod
@@ -275,6 +447,77 @@ class InsightsHelper(object):
         return insights
 
     @classmethod
+    def _calculateWinningMarginDistribution(self, week_event_matches, year):
+        """
+        Returns a list of Insights, one for all data and one for elim data
+        The data for each Insight is a dict:
+        Key: Middle score of a bucketed range of scores, Value: % occurrence
+        """
+        winning_margin_distribution = defaultdict(int)
+        elim_winning_margin_distribution = defaultdict(int)
+        overall_high_margin = 0
+        for _, week_events in week_event_matches:
+            for _, matches in week_events:
+                for match in matches:
+                    if not match.has_been_played:
+                        continue
+                    redScore = int(match.alliances['red']['score'])
+                    blueScore = int(match.alliances['blue']['score'])
+
+                    winning_margin = abs(redScore - blueScore)
+
+                    overall_high_margin = max(overall_high_margin, winning_margin)
+
+                    winning_margin_distribution[winning_margin] += 1
+
+                    if match.comp_level in Match.ELIM_LEVELS:
+                        elim_winning_margin_distribution[winning_margin] += 1
+
+        insights = []
+        if winning_margin_distribution != {}:
+            binAmount = math.ceil(float(overall_high_margin) / 20)
+            totalCount = float(sum(winning_margin_distribution.values()))
+            winning_margin_distribution_normalized = {}
+            for margin, amount in winning_margin_distribution.items():
+                roundedScore = margin - int(margin % binAmount) + binAmount / 2  # Round off and then center in the bin
+                contribution = float(amount) * 100 / totalCount
+                if roundedScore in winning_margin_distribution_normalized:
+                    winning_margin_distribution_normalized[roundedScore] += contribution
+                else:
+                    winning_margin_distribution_normalized[roundedScore] = contribution
+
+            insights.append(
+                self._createInsight(
+                    winning_margin_distribution_normalized,
+                    Insight.INSIGHT_NAMES[Insight.WINNING_MARGIN_DISTRIBUTION],
+                    year
+                )
+            )
+
+        if elim_winning_margin_distribution != {}:
+            if binAmount is None:  # Use same binAmount from above if possible
+                binAmount = math.ceil(float(overall_high_margin) / 20)
+            totalCount = float(sum(elim_winning_margin_distribution.values()))
+            elim_winning_margin_distribution_normalized = {}
+            for margin, amount in elim_winning_margin_distribution.items():
+                roundedScore = margin - int(margin % binAmount) + binAmount / 2
+                contribution = float(amount) * 100 / totalCount
+                if roundedScore in elim_winning_margin_distribution_normalized:
+                    elim_winning_margin_distribution_normalized[roundedScore] += contribution
+                else:
+                    elim_winning_margin_distribution_normalized[roundedScore] = contribution
+
+            insights.append(
+                self._createInsight(
+                    elim_winning_margin_distribution_normalized,
+                    Insight.INSIGHT_NAMES[Insight.ELIM_WINNING_MARGIN_DISTRIBUTION],
+                    year
+                )
+            )
+
+        return insights
+
+    @classmethod
     def _calculateNumMatches(self, week_event_matches, year):
         """
         Returns an Insight where the data is the number of matches
@@ -293,6 +536,32 @@ class InsightsHelper(object):
             return []
 
     @classmethod
+    def _calculateYearSpecific(self, week_event_matches, year):
+        """
+        Returns an Insight where the data contains year specific insights
+        """
+        all_matches = []
+        event_insights_by_week = []  # tuples: week, week_insights
+        for week, week_events in week_event_matches:
+            week_matches = []
+            for _, matches in week_events:
+                week_matches += matches
+                all_matches += matches
+            week_insights = EventInsightsHelper.calculate_event_insights(week_matches, year)
+            if week_insights:
+                event_insights_by_week.append((week, week_insights))
+
+        total_insights = EventInsightsHelper.calculate_event_insights(all_matches, year)
+
+        insights = []
+        if event_insights_by_week != []:
+            insights.append(self._createInsight(event_insights_by_week, Insight.INSIGHT_NAMES[Insight.YEAR_SPECIFIC_BY_WEEK], year))
+        if total_insights:
+            insights.append(self._createInsight(total_insights, Insight.INSIGHT_NAMES[Insight.YEAR_SPECIFIC], year))
+
+        return insights
+
+    @classmethod
     def _calculateBlueBanners(self, award_futures, year):
         """
         Returns an Insight where the data is a dict:
@@ -301,7 +570,7 @@ class InsightsHelper(object):
         blue_banner_winners = defaultdict(int)
         for award_future in award_futures:
             award = award_future.get_result()
-            if award.award_type_enum in AwardType.BLUE_BANNER_AWARDS:
+            if award.award_type_enum in AwardType.BLUE_BANNER_AWARDS and award.count_banner:
                 for team_key in award.team_list:
                     team_key_name = team_key.id()
                     blue_banner_winners[team_key_name] += 1
@@ -454,10 +723,16 @@ class InsightsHelper(object):
                 rca_winners[team] += 1
 
         year_world_champions = Insight.query(Insight.name == Insight.INSIGHT_NAMES[Insight.WORLD_CHAMPIONS], Insight.year != 0).fetch(1000)
-        world_champions = defaultdict(int)
+        world_champions = defaultdict(list)
         for insight in year_world_champions:
             for team in insight.data:
-                world_champions[team] += 1
+                world_champions[team].append(insight.year)
+
+        year_division_winners = Insight.query(Insight.name == Insight.INSIGHT_NAMES[Insight.DIVISION_WINNERS], Insight.year != 0).fetch(1000)
+        division_winners = defaultdict(list)
+        for insight in year_division_winners:
+            for team in insight.data:
+                division_winners[team].append(insight.year)
 
         year_successful_elim_teamups = Insight.query(Insight.name == Insight.INSIGHT_NAMES[Insight.SUCCESSFUL_ELIM_TEAMUPS], Insight.year != 0).fetch(1000)
         successful_elim_teamups = defaultdict(int)
@@ -475,7 +750,8 @@ class InsightsHelper(object):
         regional_winners = self._sortTeamWinsDict(regional_winners)
         blue_banners = self._sortTeamWinsDict(blue_banners)
         rca_winners = self._sortTeamWinsDict(rca_winners)
-        world_champions = self._sortTeamWinsDict(world_champions)
+        world_champions = self._sortTeamYearWinsDict(world_champions)
+        division_winners = self._sortTeamYearWinsDict(division_winners)
 
         # Creating Insights
         if regional_winners:
@@ -489,6 +765,9 @@ class InsightsHelper(object):
 
         if world_champions:
             insights.append(self._createInsight(world_champions, Insight.INSIGHT_NAMES[Insight.WORLD_CHAMPIONS], 0))
+
+        if division_winners:
+            insights.append(self._createInsight(division_winners, Insight.INSIGHT_NAMES[Insight.DIVISION_WINNERS], 0))
 
         if year_successful_elim_teamups:
             insights.append(self._createInsight(successful_elim_teamups_sorted, Insight.INSIGHT_NAMES[Insight.SUCCESSFUL_ELIM_TEAMUPS], 0))

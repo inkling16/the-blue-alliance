@@ -27,7 +27,6 @@
 from datetime import datetime, timedelta
 import logging
 import re
-import urllib, urllib2
 import json
 import importlib
 
@@ -44,8 +43,9 @@ class GCMMessage:
     collapse_key = None
     delay_while_idle = None
     time_to_live = None
+    priority = None
 
-    def __init__(self, device_tokens, notification, collapse_key=None, delay_while_idle=None, time_to_live=None):
+    def __init__(self, device_tokens, notification, collapse_key=None, delay_while_idle=None, time_to_live=None, priority=None):
         if isinstance(device_tokens, list):
             self.device_tokens = device_tokens
         else:
@@ -55,6 +55,7 @@ class GCMMessage:
         self.collapse_key = collapse_key
         self.delay_while_idle = delay_while_idle
         self.time_to_live = time_to_live
+        self.priority = priority
 
     def __unicode__(self):
         return "%s:%s:%s:%s:%s" % (repr(self.device_tokens), repr(self.notification), repr(self.collapse_key), repr(self.delay_while_idle), repr(self.time_to_live))
@@ -62,8 +63,8 @@ class GCMMessage:
     def json_string(self):
 
         if not self.device_tokens or not isinstance(self.device_tokens, list):
-            logging.error('GCMMessage generate_json_string error. Invalid device tokens: ' + repr(self))
-            raise Exception('GCMMessage generate_json_string error. Invalid device tokens.')
+            logging.error('FCMMessage generate_json_string error. Invalid device tokens: ' + repr(self))
+            raise Exception('FCMMessage generate_json_string error. Invalid device tokens.')
 
         json_dict = {}
         json_dict['registration_ids'] = self.device_tokens
@@ -81,6 +82,8 @@ class GCMMessage:
             json_dict['delay_while_idle'] = self.delay_while_idle
         if self.time_to_live:
             json_dict['time_to_live'] = self.time_to_live
+        if self.priority:
+            json_dict['priority'] = self.priority
 
         json_str = json.dumps(json_dict)
         return json_str
@@ -101,13 +104,11 @@ class GCMConnection:
         self.LOCALHOST = False
         self.SERVER_KEY = Sitevar.get_by_id('gcm.serverKey')
         if self.SERVER_KEY is None:
-            raise Exception("Missing sitevar: gcm.serverKey. Can't send GCM messages.")
-        logging.info("GCM KEY: "+str(self.SERVER_KEY.values_json))
-        self.GCM_CONFIG = {'gcm_api_key': str(self.SERVER_KEY.values_json) }
+            raise Exception("Missing sitevar: gcm.serverKey. Can't send FCM messages.")
+        self.GCM_CONFIG = {'gcm_api_key': self.SERVER_KEY.contents['gcm_key']}
         self.GOOGLE_LOGIN_URL = 'https://www.google.com/accounts/ClientLogin'
         # Can't use https on localhost due to Google cert bug
-        self.GOOGLE_GCM_SEND_URL = 'https://android.apis.google.com/gcm/send'
-        self.GOOGLE_GCM_SEND_URL = 'https://android.googleapis.com/gcm/send'
+        self.GOOGLE_GCM_SEND_URL = 'https://fcm.googleapis.com/fcm/send'
 
         self.GCM_QUEUE_NAME = 'gcm-retries'
         self.GCM_QUEUE_CALLBACK_URL = '/gae_python_gcm/send_request'
@@ -157,6 +158,7 @@ class GCMConnection:
 
     # Try sending message now
     def _send_request(self, message):
+        import urllib2
         if message.device_tokens is None or message.notification is None:
             logging.error('Message must contain device_tokens and notification.')
             return False
@@ -231,6 +233,7 @@ class GCMConnection:
 
             if e.code == 400:
                 logging.error('400, Invalid GCM JSON message: ' + repr(gcm_post_json_str))
+                logging.exception(str(e.code) + " " + e.msg + " " + e.read())
             elif e.code == 401:
                 logging.error('401, Error authenticating with GCM. Retrying message. Might need to fix auth key!')
                 self._requeue_message(message)
@@ -279,7 +282,3 @@ class GCMConnection:
 
         else:
             logging.error("Unknown error: %s for device token: %s" % (repr(error_msg), repr(device_token)))
-
-
-
-

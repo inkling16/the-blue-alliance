@@ -1,12 +1,7 @@
-import tba_config
+from google.appengine.ext import vendor
 
-if tba_config.CONFIG['env'] == 'prod':
-    appstats_RECORD_FRACTION = tba_config.RECORD_FRACTION
-else:
-    appstats_CALC_RPC_COSTS = True
+import six
+# https://github.com/googleapis/python-ndb/issues/249#issuecomment-560957294
+six.moves.reload_module(six)
 
-
-def webapp_add_wsgi_middleware(app):
-    from google.appengine.ext.appstats import recording
-    app = recording.appstats_wsgi_middleware(app)
-    return app
+vendor.add('lib')

@@ -36,6 +36,10 @@ function getYoutubeId(url) {
     }
 }
 
+function cleanTeamNum(number) {
+    return number.toString().trim().replace("*", "")
+}
+
 $('#teams-ok').click(function(){
     if(!$("#team_list").val()){
         alert("Please enter team data.");
@@ -97,25 +101,36 @@ $('#schedule_file').change(function(){
         var request_body = [];
 
         $('#schedule_preview').empty();
-        $('#schedule_preview').html("<tr><th>Time</th><th>Description</th><th>Match</th><th>Blue 1</th><th>Blue 2</th><th>Blue 3</th><th>Red 1</th><th>Red 2</th><th>Red 3</th></tr>");
+        $('#schedule_preview').html("<tr><th>Time</th><th>Description</th><th>Match</th><th>TBA Key</th><th>Blue 1</th><th>Blue 2</th><th>Blue 3</th><th>Red 1</th><th>Red 2</th><th>Red 3</th></tr>");
         var filter = $('input[name="import-comp-level"]:checked').val();
         for(var i=0; i<matches.length; i++){
             var match = matches[i];
 
             // check for invalid match
-            if(!match['Match'] || !match['Red 1']){
+            if(!match['Description'] || !match['Red 1']){
                 continue;
             }
 
-            var compLevel, setNumber, matchNumber;
-            // only works for 2015 format
-            setNumber = 1;
-            matchNumber = parseInt(match['Match']);
-            if(match['Description'].indexOf("Qualification") == 0){
+            var compLevel, setNumber, matchNumber, rawMatchNumber, matchKey;
+            var has_octo = $('input[name="alliance-count-schedule"]:checked').val() == "16";
+            if (match['Match']) {
+                rawMatchNumber = parseInt(match['Match']);
+            } else if (match['Description'].indexOf('#') >= 0) {
+                rawMatchNumber = parseInt(match['Description'].split('#')[1]);
+            } else {
+                rawMatchNumber = parseInt(match['Description'].split(' ')[1]);
+            }
+            if(!match.hasOwnProperty('Description') || match['Description'].indexOf("Qualification") == 0){
+                matchNumber = parseInt(match['Description'].split(' ')[1]);
                 compLevel = "qm";
+                setNumber = 1;
+                matchKey = "qm" + matchNumber;
             }else{
-                compLevel = playoffTypeFromNumber(matchNumber);
-                matchNumber = playoffMatchNumber(compLevel, matchNumber);
+                compLevel = playoffTypeFromNumber(rawMatchNumber, has_octo);
+                var setAndMatch = playoffMatchAndSet(rawMatchNumber, has_octo);
+                setNumber = setAndMatch[0];
+                matchNumber = setAndMatch[1];
+                matchKey = compLevel + setNumber + "m" + matchNumber;
             }
 
             /* Ignore matches the user doesn't want */
@@ -126,13 +141,14 @@ $('#schedule_file').change(function(){
             var row = $('<tr>');
             row.append($('<td>').html(match['Time']));
             row.append($('<td>').html(match['Description']));
-            row.append($('<td>').html(match['Match']));
-            row.append($('<td>').html(match['Blue 1']));
-            row.append($('<td>').html(match['Blue 2']));
-            row.append($('<td>').html(match['Blue 3']));
-            row.append($('<td>').html(match['Red 1']));
-            row.append($('<td>').html(match['Red 2']));
-            row.append($('<td>').html(match['Red 3']));
+            row.append($('<td>').html(rawMatchNumber));
+            row.append($('<td>').html($('#event_key').val() + "_" + matchKey));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 1'])));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 2'])));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 3'])));
+            row.append($('<td>').html(cleanTeamNum(match['Red 1'])));
+            row.append($('<td>').html(cleanTeamNum(match['Red 2'])));
+            row.append($('<td>').html(cleanTeamNum(match['Red 3'])));
 
             $('#schedule_preview').append(row);
 
@@ -143,10 +159,10 @@ $('#schedule_file').change(function(){
                 'match_number': matchNumber,
                 'alliances': {
                     'red': {
-                    'teams': ['frc'+match['Red 1'], 'frc'+match['Red 2'], 'frc'+match['Red 3']],
+                    'teams': ['frc'+cleanTeamNum(match['Red 1']), 'frc'+cleanTeamNum(match['Red 2']), 'frc'+cleanTeamNum(match['Red 3'])],
                     'score': null
                     },'blue': {
-                    'teams': ['frc'+match['Blue 1'], 'frc'+match['Blue 2'], 'frc'+match['Blue 3']],
+                    'teams': ['frc'+cleanTeamNum(match['Blue 1']), 'frc'+cleanTeamNum(match['Blue 2']), 'frc'+cleanTeamNum(match['Blue 3'])],
                     'score': null
                     }
                 },
@@ -193,7 +209,9 @@ $('#results_file').change(function(){
         var request_body = [];
 
         $('#results_preview').empty();
-        $('#results_preview').html("<tr><th>Time</th><th>Match</th><th>Red 1</th><th>Red 2</th><th>Red 3</th><th>Blue 1</th><th>Blue 2</th><th>Blue 3</th><th>Red Score</th><th>Blue Score</th></tr>");
+        $('#results_preview').html("<tr><th>Time</th><th>Match</th><th>TBA Key</th><th>Red 1</th><th>Red 2</th><th>Red 3</th><th>Blue 1</th><th>Blue 2</th><th>Blue 3</th><th>Red Score</th><th>Blue Score</th></tr>");
+        var good_matches = 0;
+        var last_match_type = null;
         for(var i=0; i<matches.length; i++){
             var match = matches[i];
 
@@ -201,30 +219,39 @@ $('#results_file').change(function(){
             if(!match['Time']){
                 continue;
             }
+            good_matches++;
+
+            var compLevel, setNumber, matchNumber;
+            var matchKey;
+            var has_octo = $('input[name="alliance-count-results"]:checked').val() == "16";
+            if (match['Match'].includes("Qualification")) {
+                matchNumber = parseInt(match['Match'].split(" ")[1]);
+                compLevel = "qm";
+                setNumber = 1;
+                matchKey = "qm" + matchNumber;
+            } else {
+                var levelSetAndMatch = playoffTypeMatchAndSet(has_octo, match['Match'], last_match_type);
+                compLevel = levelSetAndMatch[0];
+                setNumber = levelSetAndMatch[1];
+                matchNumber = levelSetAndMatch[2];
+                matchKey = compLevel + setNumber + "m" + matchNumber;
+            }
+            last_match_type = compLevel;
 
             var row = $('<tr>');
             row.append($('<td>').html(match['Time']));
             row.append($('<td>').html(match['Match']));
-            row.append($('<td>').html(match['Red 1']));
-            row.append($('<td>').html(match['Red 2']));
-            row.append($('<td>').html(match['Red 3']));
-            row.append($('<td>').html(match['Blue 1']));
-            row.append($('<td>').html(match['Blue 2']));
-            row.append($('<td>').html(match['Blue 3']));
+            row.append($('<td>').html($('#event_key').val() + "_" + matchKey));
+            row.append($('<td>').html(cleanTeamNum(match['Red 1'])));
+            row.append($('<td>').html(cleanTeamNum(match['Red 2'])));
+            row.append($('<td>').html(cleanTeamNum(match['Red 3'])));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 1'])));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 2'])));
+            row.append($('<td>').html(cleanTeamNum(match['Blue 3'])));
             row.append($('<td>').html(match['Red Score']));
             row.append($('<td>').html(match['Blue Score']));
 
             $('#results_preview').append(row);
-
-            var compLevel, setNumber, matchNumber;
-            // only works for 2015 format
-            matchNumber = parseInt(match['Match'].split(" ")[1]);
-            setNumber = 1;
-            if(match['Match'].indexOf("Qualification") == 0){
-                compLevel = "qm";
-            }else{
-                compLevel = playoffTypeFromMatchString(match['Match']);
-            }
 
             // make json dict
             request_body.push({
@@ -233,10 +260,10 @@ $('#results_file').change(function(){
                 'match_number': matchNumber,
                 'alliances': {
                     'red': {
-                    'teams': ['frc'+match['Red 1'], 'frc'+match['Red 2'], 'frc'+match['Red 3']],
+                    'teams': ['frc'+cleanTeamNum(match['Red 1']), 'frc'+cleanTeamNum(match['Red 2']), 'frc'+cleanTeamNum(match['Red 3'])],
                     'score': parseInt(match['Red Score'])
                     },'blue': {
-                    'teams': ['frc'+match['Blue 1'], 'frc'+match['Blue 2'], 'frc'+match['Blue 3']],
+                    'teams': ['frc'+cleanTeamNum(match['Blue 1']), 'frc'+cleanTeamNum(match['Blue 2']), 'frc'+cleanTeamNum(match['Blue 3'])],
                     'score': parseInt(match['Blue Score'])
                     }
                 },
@@ -256,7 +283,6 @@ $('#results_file').change(function(){
         $('#results-ok').show();
         $('#results-ok').unbind('click').click(function(){
             $(this).css('background-color', '#eb9316');
-            alert(JSON.stringify(request_body));
             makeRequest('/api/trusted/v1/event/' + $('#event_key').val() + '/matches/update', JSON.stringify(request_body), $(this));
         });
 
@@ -277,24 +303,49 @@ $('#rankings_file').change(function(){
         var sheet = workbook.Sheets[first_sheet];
 
         //parse the excel to array of matches
-        //headers start on 5th row
-        var rankings = XLSX.utils.sheet_to_json(sheet, {range:3});
+        var rankings = XLSX.utils.sheet_to_json(sheet, {range:4});
 
         var request_body = {};
 
+        // 2015 Headers
+        //var headers = ['Rank', 'Team', 'Qual Avg', 'Coopertition', 'Auto', 'Container', 'Tote', 'Litter', 'DQ', 'Played'];
+
+        // 2016 Headers
+        //var headers  = ['Rank', 'Team', 'RS', 'Auto', 'S/C', 'Boulders', 'Defenses', 'W-L-T', 'Played', 'DQ'];
+        //var display_headers = ["Rank", "Team", "Ranking Score", "Auto", "Scale/Challenge", "Goals", "Defense", "Record (W-L-T)", "Played", 'DQ'];
+        //var is_int = [true, true, true, true, true, false, true, true];
+
+        // 2017 Headers
+        //var headers = ['Rank', 'Team', 'RS', 'TotalPts', 'Auto', 'Rotor', 'Takeoff', 'kPa', 'W-L-T', 'DQ', 'Played'];
+        //var display_headers = ['Rank', 'Team', 'Ranking Score', 'Match Points', 'Auto', 'Rotor', 'Takeoff', 'kPa', 'Record (W-L-T)', 'DQ', 'Played'];
+        //var is_num = [true, true, true, true, true, true, false, true, true];
+
+        // 2018 Headers
+        //var headers = ['Rank', 'Team', 'RS', 'Endgame', 'Auto', 'Ownership', 'Vault', 'W-L-T', 'DQ', 'Played'];
+        //var display_headers = ['Rank', 'Team', 'Ranking Score', 'End Game', 'Auto', 'Ownership', 'Vault', 'Record (W-L-T)', 'DQ', 'Played'];
+        //var is_num = [true, true, true, true, true, false, true, true];
+
+        // 2019 Headers
+        //var headers = ['Rank', 'Team', 'RS', 'Cargo Pts', 'Panel Pts', 'HAB Pts', 'Sandstorm', 'W-L-T', 'DQ', 'Played'];
+        //var display_headers = ['Rank', 'Team', 'Ranking Score', 'Cargo', 'Hatch Panel', 'HAB Climb', 'Sandstorm Bonus', 'Record (W-L-T)', 'DQ', 'Played'];
+        //var is_num = [true, true, true, true, true, false, true, true];
+
+        // 2020/2021 Headers
+        var headers = ['Rank', 'Team', 'RS', 'Auto Pts', 'Endgame Pts', 'Teleop Cell+CPanel', 'W-L-T', 'DQ', 'Played'];
+        var display_headers = ['Rank', 'Team', 'Ranking Score', 'Auto', 'Endgame', 'Teleop', 'Record (W-L-T)', 'DQ', 'Played'];
+        var is_num = [true, true, true, true, false, true, true];
+
         $('#rankings_preview').empty();
-        $('#rankings_preview').html("<tr><th>Rank</th><th>Team</th><th>Qual Avg</th><th>Coopertition</th><th>Auto</th><th>Container</th><th>Tote</th><th>Litter</th><th>DQ</th><th>Played</th></tr>");
+        $('#rankings_preview').html("<tr><th>" + display_headers.join("</th><th>") + "</th></tr>");
 
-        var headers = ['Rank', 'Team', 'Qual Avg', 'Coopertition', 'Auto', 'Container', 'Tote', 'Litter', 'DQ', 'Played'];
-
-        request_body['breakdowns'] = headers.slice(2, 8);
+        request_body['breakdowns'] = display_headers.slice(2, 7);
         request_body['rankings'] = [];
 
         for(var i=0; i<rankings.length; i++){
             var rank = rankings[i];
 
             // check for invalid row
-            if(!rank['Rank']){
+            if(!rank['Rank'] || isNaN(rank['Rank'])){
                 continue;
             }
 
@@ -311,7 +362,8 @@ $('#rankings_file').change(function(){
             breakdown['played'] = parseInt(rank['Played']);
             breakdown['dqs'] = parseInt(rank['DQ']);
             for(var j=0; j<request_body['breakdowns'].length; j++){
-                breakdown[request_body['breakdowns'][j]] = parseInt(rank[request_body['breakdowns'][j]]);
+                var val = rank[headers[j + 2]];
+                breakdown[request_body['breakdowns'][j]] = is_num[j] ? Number(val.toString().replace(',','')) : val;
             }
             request_body['rankings'].push(breakdown);
         }
@@ -459,28 +511,39 @@ function updateRankings(cell) {
     cell.parent().css('background-color', '#eb9316');
     $.ajax({
         type: 'GET',
-        url: 'http://10.0.100.5/pit/getdata?random=' + Math.random(),
-        dataType: 'jsonp',
+        url: 'http://10.0.100.5/Pit/GetData?random=' + Math.random(),
+        dataType: 'json',
         cache: false,
         timeout: 5000,
         success: function (data) {
             console.log(data);
 
             var request_body = {};
-            var breakdowns = ['Avg', 'CP', 'AP', 'RC', 'TP', 'LP'];
-            var rankData = JSON.parse(data)['Ranks'];
-            request_body['breakdowns'] = breakdowns;
+
+            // 2015 Headers
+            //var breakdowns = ['Avg', 'CP', 'AP', 'RC', 'TP', 'LP'];
+
+            // 2016 Headers
+            //var breakdowns  = ['RS', 'Sort2', 'Sort3', 'Sort4', 'Sort 5', 'Wins', 'Losses', 'Ties', 'Played', 'DQ'];
+            //var display = ["Ranking Score", "Auto", "Scale/Challenge", "Goals", "Defense", "Wins", "Losses", "Ties", "Played", 'DQ'];
+
+            // 2017 Headers
+            var breakdowns  = ['RS', 'Sort2', 'Sort3', 'Sort4', 'Sort 5', 'Wins', 'Losses', 'Ties', 'Played', 'DQ'];
+            var display = ["Ranking Score", "Auto", "Scale/Challenge", "Goals", "Defense", "Wins", "Losses", "Ties", "Played", 'DQ'];
+
+            var rankData = data['Ranks'];
+            request_body['breakdowns'] = display;
             request_body['rankings'] = [];
             for(var i=0; i<rankData.length; i++){
                 // Turn team number -> team key
                 rankData[i]['Team'] = "frc"+rankData[i]['Team'];
                 var teamRank = {};
                 teamRank['team_key'] = rankData[i]['Team'];
-                teamRank['rank'] = rankData[i]['Rank']
+                teamRank['rank'] = rankData[i]['Rank'];
                 teamRank['played'] = rankData[i]['Played'];
                 teamRank['dqs'] = 0;
                 for(var j=0; j<breakdowns.length; j++){
-                    teamRank[breakdowns[j]] = rankData[i][breakdowns[j]];
+                    teamRank[display[j]] = Number(rankData[i][breakdowns[j]].toString().replace(',',''));
                 }
                 request_body['rankings'].push(teamRank);
             }

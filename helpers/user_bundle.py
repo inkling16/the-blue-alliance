@@ -15,7 +15,7 @@ class UserBundle(object):
 
     @property
     def account(self):
-        if self._account is None:
+        if self._account is None and self.user:
             self._account = Account.get_or_insert(
                 self.user.user_id(),
                 email = self.user.email(),
@@ -47,3 +47,6 @@ class UserBundle(object):
 
     def create_login_url(self, target_url="/"):
         return users.create_login_url(target_url)
+
+    def create_logout_url(self, target_url="/"):
+        return users.create_logout_url(target_url)

@@ -1,5 +1,6 @@
 from consts.award_type import AwardType
 
+
 class DistrictPointValues(object):
     """
     A class that contains various district point constants over the years:
@@ -11,7 +12,7 @@ class DistrictPointValues(object):
      - 2012: http://www.firstinmichigan.org/FRC_2012/2012_Rules_Supplement.pdf
      - 2011: http://www.firstinmichigan.org/FRC_2011/2011_Rules_Supplement.pdf
      - 2010: http://www.firstinmichigan.org/FRC_2010/2010_Update_3.pdf
-     - 2009: http://www.chiefdelphi.com/forums/showpost.php?p=759453&postcount=67
+     - 2009: https://www.chiefdelphi.com/forums/showpost.php?p=759453&postcount=67
     """
 
     STANDARD_MULTIPLIER = 1
@@ -77,11 +78,11 @@ class DistrictPointValues(object):
 
     # Pre-2014 Awards, all worth either 5 or 2 points
     LEGACY_5_PT_AWARDS = {
-        2013: [AwardType.INDUSTRIAL_DEESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY],
-        2012: [AwardType.INDUSTRIAL_DEESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION],
-        2011: [AwardType.INDUSTRIAL_DEESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION, AwardType.EXCELLENCE_IN_DESIGN],
-        2010: [AwardType.INDUSTRIAL_DEESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ROOKIE_ALL_STAR, AwardType.ENGINEERING_INSPIRATION, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION],
-        2009: [AwardType.INDUSTRIAL_DEESIGN, AwardType.QUALITY, AwardType.DRIVING_TOMORROWS_TECHNOLOGY, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY]
+        2013: [AwardType.INDUSTRIAL_DESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY],
+        2012: [AwardType.INDUSTRIAL_DESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION],
+        2011: [AwardType.INDUSTRIAL_DESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION, AwardType.EXCELLENCE_IN_DESIGN],
+        2010: [AwardType.INDUSTRIAL_DESIGN, AwardType.QUALITY, AwardType.ENGINEERING_EXCELLENCE, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY, AwardType.ROOKIE_ALL_STAR, AwardType.ENGINEERING_INSPIRATION, AwardType.ENTREPRENEURSHIP, AwardType.COOPERTITION],
+        2009: [AwardType.INDUSTRIAL_DESIGN, AwardType.QUALITY, AwardType.DRIVING_TOMORROWS_TECHNOLOGY, AwardType.INNOVATION_IN_CONTROL, AwardType.CREATIVITY]
     }
 
     LEGACY_2_PT_AWARDS = {

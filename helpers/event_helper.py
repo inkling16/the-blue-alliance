@@ -1,22 +1,22 @@
+import json
 import logging
 import collections
 import datetime
-import json
 import re
-import urllib
 
-from google.appengine.api import urlfetch
+from google.appengine.api import memcache
 from google.appengine.ext import ndb
 
 from consts.district_type import DistrictType
 from consts.event_type import EventType
 
+from models.district import District
 from models.event import Event
 from models.match import Match
-from models.sitevar import Sitevar
 
-CHAMPIONSHIP_EVENTS_LABEL = 'Championship Event'
-REGIONAL_EVENTS_LABEL = 'Week {}'
+CHAMPIONSHIP_EVENTS_LABEL = 'FIRST Championship'
+TWO_CHAMPS_LABEL = 'FIRST Championship - {}'
+FOC_LABEL = 'FIRST Festival of Champions'
 WEEKLESS_EVENTS_LABEL = 'Other Official Events'
 OFFSEASON_EVENTS_LABEL = 'Offseason'
 PRESEASON_EVENTS_LABEL = 'Preseason'
@@ -27,24 +27,30 @@ class EventHelper(object):
     Helper class for Events.
     """
     @classmethod
-    def alliance_selections_to_points(self, event_key, multiplier, alliance_selections):
+    def alliance_selections_to_points(self, event, multiplier, alliance_selections):
         team_points = {}
-        if event_key == "2015micmp":
-            # Special case for 2015 Michigan District CMP, due to there being 16 alliances instead of 8
-            # Uses max of 48 points and no multiplier
-            # See 2015 Admin Manual, section 7.4.3.1
-            # http://www.firstinspires.org/sites/default/files/uploads/resource_library/frc/game-and-season-info/archive/2015/AdminManual20150407.pdf
-            for n, alliance in enumerate(alliance_selections):
-                team_points[alliance['picks'][0]] = int(48 - (1.5 * n))
-                team_points[alliance['picks'][1]] = int(48 - (1.5 * n))
-                team_points[alliance['picks'][2]] = int((n + 1) * 1.5)
-                n += 1
-        else:
-            for n, alliance in enumerate(alliance_selections):
-                n += 1
-                team_points[alliance['picks'][0]] = (17 - n) * multiplier
-                team_points[alliance['picks'][1]] = (17 - n) * multiplier
-                team_points[alliance['picks'][2]] = n * multiplier
+        try:
+            if event.key.id() == "2015micmp":
+                # Special case for 2015 Michigan District CMP, due to there being 16 alliances instead of 8
+                # Uses max of 48 points and no multiplier
+                # See 2015 Admin Manual, section 7.4.3.1
+                # http://www.firstinspires.org/sites/default/files/uploads/resource_library/frc/game-and-season-info/archive/2015/AdminManual20150407.pdf
+                for n, alliance in enumerate(alliance_selections):
+                    team_points[alliance['picks'][0]] = int(48 - (1.5 * n))
+                    team_points[alliance['picks'][1]] = int(48 - (1.5 * n))
+                    team_points[alliance['picks'][2]] = int((n + 1) * 1.5)
+                    n += 1
+            else:
+                for n, alliance in enumerate(alliance_selections):
+                    n += 1
+                    team_points[alliance['picks'][0]] = (17 - n) * multiplier
+                    team_points[alliance['picks'][1]] = (17 - n) * multiplier
+                    team_points[alliance['picks'][2]] = n * multiplier
+        except Exception, e:
+            # Log only if this matters
+            if event.district_key is not None:
+                logging.error("Alliance points calc for {} errored!".format(event.key.id()))
+                logging.exception(e)
 
         return team_points
 
@@ -55,37 +61,34 @@ class EventHelper(object):
         """
         to_return = collections.OrderedDict()  # key: week_label, value: list of events
 
-        current_week = 1
-        week_start = None
         weekless_events = []
         offseason_events = []
         preseason_events = []
         for event in events:
             if event.official and event.event_type_enum in {EventType.CMP_DIVISION, EventType.CMP_FINALS}:
-                if CHAMPIONSHIP_EVENTS_LABEL in to_return:
-                    to_return[CHAMPIONSHIP_EVENTS_LABEL].append(event)
+                if event.year >= 2017:
+                    champs_label = TWO_CHAMPS_LABEL.format(event.city)
                 else:
-                    to_return[CHAMPIONSHIP_EVENTS_LABEL] = [event]
-            elif event.official and event.event_type_enum in {EventType.REGIONAL, EventType.DISTRICT, EventType.DISTRICT_CMP}:
+                    champs_label = CHAMPIONSHIP_EVENTS_LABEL
+                if champs_label in to_return:
+                    to_return[champs_label].append(event)
+                else:
+                    to_return[champs_label] = [event]
+            elif event.official and event.event_type_enum in {EventType.REGIONAL, EventType.DISTRICT, EventType.DISTRICT_CMP_DIVISION, EventType.DISTRICT_CMP}:
                 if (event.start_date is None or
                    (event.start_date.month == 12 and event.start_date.day == 31)):
                     weekless_events.append(event)
                 else:
-                    if week_start is None:
-                        diff_from_wed = (event.start_date.weekday() - 2) % 7  # 2 is Wednesday
-                        week_start = event.start_date - datetime.timedelta(days=diff_from_wed)
-
-                    if event.start_date >= week_start + datetime.timedelta(days=7):
-                        current_week += 1
-                        week_start += datetime.timedelta(days=7)
-                    if event.year == 2016:  # Special case for 2016 week 0.5
-                        label = REGIONAL_EVENTS_LABEL.format(0.5 if current_week == 1 else current_week - 1)
-                    else:
-                        label = REGIONAL_EVENTS_LABEL.format(current_week)
+                    label = event.week_str
                     if label in to_return:
                         to_return[label].append(event)
                     else:
                         to_return[label] = [event]
+            elif event.event_type_enum == EventType.FOC:
+                if FOC_LABEL in to_return:
+                    to_return[FOC_LABEL].append(event)
+                else:
+                    to_return[FOC_LABEL] = [event]
             elif event.event_type_enum == EventType.PRESEASON:
                 preseason_events.append(event)
             else:
@@ -107,7 +110,7 @@ class EventHelper(object):
         if not event.start_date:
             return datetime.datetime(2177, 1, 1, 1, 1, 1)
         else:
-            return event.start_date
+            return event.time_as_utc(event.start_date)
 
     @classmethod
     def distantFutureIfNoEndDate(self, event):
@@ -169,19 +172,24 @@ class EventHelper(object):
         An event shows up in this query iff:
         a) The event is within_a_day
         OR
-        b) The event.start_date is on or within 4 days after the closest Wednesday
+        b) The event.start_date is on or within 4 days after the closest Wednesday/Monday (pre-2020/post-2020)
         """
+        event_keys = memcache.get('EventHelper.getWeekEvents():event_keys')
+        if event_keys is not None:
+            return ndb.get_multi(event_keys)
+
         today = datetime.datetime.today()
 
         # Make sure all events to be returned are within range
         two_weeks_of_events_keys_future = Event.query().filter(
-          Event.start_date >= (today - datetime.timedelta(days=7))).filter(
-          Event.start_date <= (today + datetime.timedelta(days=7))).order(
-          Event.start_date).fetch_async(50, keys_only=True)
+          Event.start_date >= (today - datetime.timedelta(weeks=1))).filter(
+          Event.start_date <= (today + datetime.timedelta(weeks=1))).order(
+          Event.start_date).fetch_async(keys_only=True)
 
         events = []
-        diff_from_wed = 2 - today.weekday()  # 2 is Wednesday. diff_from_wed ranges from 3 to -3 (Monday thru Sunday)
-        closest_wednesday = today + datetime.timedelta(days=diff_from_wed)
+
+        diff_from_week_start = 0 - today.weekday()
+        closest_start_monday = today + datetime.timedelta(days=diff_from_week_start)
 
         two_weeks_of_event_futures = ndb.get_multi_async(two_weeks_of_events_keys_future.get_result())
         for event_future in two_weeks_of_event_futures:
@@ -189,113 +197,81 @@ class EventHelper(object):
             if event.within_a_day:
                 events.append(event)
             else:
-                offset = event.start_date.date() - closest_wednesday.date()
-                if (offset == datetime.timedelta(0)) or (offset > datetime.timedelta(0) and offset < datetime.timedelta(4)):
+                offset = event.start_date.date() - closest_start_monday.date()
+                if (offset == datetime.timedelta(0)) or (offset > datetime.timedelta(0) and offset < datetime.timedelta(weeks=1)):
                     events.append(event)
 
         EventHelper.sort_events(events)
+        memcache.set('EventHelper.getWeekEvents():event_keys', [e.key for e in events], 60*60)
         return events
 
     @classmethod
     def getEventsWithinADay(self):
-        week_events = self.getWeekEvents()
-        ret = []
-        for event in week_events:
-            if event.within_a_day:
-                ret.append(event)
-        return ret
+        event_keys = memcache.get('EventHelper.getEventsWithinADay():event_keys')
+        if event_keys is not None:
+            return ndb.get_multi(event_keys)
+
+        events = filter(lambda e: e.within_a_day, self.getWeekEvents())
+        memcache.set('EventHelper.getEventsWithinADay():event_keys', [e.key for e in events], 60*60)
+        return events
 
     @classmethod
-    def getShortName(self, name_str):
+    def getShortName(self, name_str, district_code=None):
         """
         Extracts a short name like "Silicon Valley" from an event name like
         "Silicon Valley Regional sponsored by Google.org".
 
         See https://github.com/the-blue-alliance/the-blue-alliance-android/blob/master/android/src/test/java/com/thebluealliance/androidclient/test/helpers/EventHelperTest.java
         """
+        district_keys = memcache.get('EventHelper.getShortName():district_keys')
+        if not district_keys:
+            codes = set([d.id()[4:].upper() for d in District.query().fetch(keys_only=True)])
+            if district_code:
+                codes.add(district_code.upper())
+            if 'MAR' in codes:  # MAR renamed to FMA in 2019
+                codes.add('FMA')
+            if 'TX' in codes:  # TX and FIT used interchangeably
+                codes.add('FIT')
+            if 'IN' in codes:  # IN and FIN used interchangeably
+                codes.add('FIN')
+            district_keys = '|'.join(codes)
+        memcache.set('EventHelper.getShortName():district_keys', district_keys, 60*60)
+
+        # Account for 2020 suspensions
+        if name_str.startswith("***SUSPENDED***"):
+            name_str = name_str.replace("***SUSPENDED***", "")
+
         # 2015+ districts
-        re_string = '(?:' + '|'.join(DistrictType.abbrevs.keys()).upper() + ') District -(.+)'
+        # Numbered events with no name
+        re_string = '({}) District Event (#\d+)'.format(district_keys)
+        match = re.match(re_string, name_str)
+        if match:
+            return '{} {}'.format(match.group(1).strip(), match.group(2).strip())
+        # The rest
+        re_string = '(?:{}) District -?(.+)'.format(district_keys)
         match = re.match(re_string, name_str)
         if match:
             partial = match.group(1).strip()
-            match2 = re.match(r'(.+)Event', partial)
-            if match2:
-                return match2.group(1).strip()
-            else:
-                return partial
+            match2 = re.sub(r'(?<=[\w\s])Event\s*(?:[\w\s]*$)?', '', partial)
+            return match2.strip()
 
-        # other districts and regionals
-        match = re.match(r'\s*(?:MAR |PNW |)(?:FIRST Robotics|FRC|)(.+)(?:District|Regional|Region|State|Tournament|FRC|Field)\b', name_str)
+        # 2014- districts
+        # district championships, other districts, and regionals
+        name_str = re.sub(r'\s?Event','', name_str)
+        match = re.match(r'\s*(?:MAR |PNW |)(?:FIRST Robotics|FRC|)(.+)(?:District|Regional|Region|Provincial|State|Tournament|FRC|Field)(?:\b)(?:[\w\s]+?(#\d*)*)?(Day \d+)?', name_str)
+
         if match:
-            short = match.group(1)
+            short = ''.join(match.groups(''))
             match = re.match(r'(.+)(?:FIRST Robotics|FRC)', short)
             if match:
-                return match.group(1).strip()
+                result = match.group(1).strip()
             else:
-                return short.strip()
+                result = short.strip()
+            if result.startswith('FIRST'):
+                result = result[5:]
+            return result.strip()
 
         return name_str.strip()
-
-    @classmethod
-    def get_timezone_id(cls, location, event_key):
-        if location is None:
-            logging.warning('Could not get timezone for event {} with no location!'.format(event_key))
-            return None
-
-        google_secrets = Sitevar.get_by_id("google.secrets")
-        google_api_key = None
-        if google_secrets is None:
-            logging.warning("Missing sitevar: google.api_key. API calls rate limited by IP and may be over rate limit.")
-        else:
-            google_api_key = google_secrets.contents['api_key']
-
-        # geocode request
-        geocode_params = {
-            'address': location,
-            'sensor': 'false',
-        }
-        if google_api_key is not None:
-            geocode_params['key'] = google_api_key
-        geocode_url = 'https://maps.googleapis.com/maps/api/geocode/json?%s' % urllib.urlencode(geocode_params)
-        try:
-            geocode_result = urlfetch.fetch(geocode_url)
-        except Exception, e:
-            logging.warning('urlfetch for geocode request failed: {}'.format(geocode_url))
-            logging.info(e)
-            return None
-        if geocode_result.status_code != 200:
-            logging.warning('Geocoding for event {} failed with url {}'.format(event_key, geocode_url))
-            return None
-        geocode_dict = json.loads(geocode_result.content)
-        if not geocode_dict['results']:
-            logging.warning('No geocode results for event location: {}'.format(location))
-            return None
-        lat = geocode_dict['results'][0]['geometry']['location']['lat']
-        lng = geocode_dict['results'][0]['geometry']['location']['lng']
-
-        # timezone request
-        tz_params = {
-            'location': '%s,%s' % (lat, lng),
-            'timestamp': 0,  # we only care about timeZoneId, which doesn't depend on timestamp
-            'sensor': 'false',
-        }
-        if google_api_key is not None:
-            tz_params['key'] = google_api_key
-        tz_url = 'https://maps.googleapis.com/maps/api/timezone/json?%s' % urllib.urlencode(tz_params)
-        try:
-            tz_result = urlfetch.fetch(tz_url)
-        except Exception, e:
-            logging.warning('urlfetch for timezone request failed: {}'.format(tz_url))
-            logging.info(e)
-            return None
-        if tz_result.status_code != 200:
-            logging.warning('TZ lookup for (lat, lng) failed! ({}, {})'.format(lat, lng))
-            return None
-        tz_dict = json.loads(tz_result.content)
-        if 'timeZoneId' not in tz_dict:
-            logging.warning('No timeZoneId for (lat, lng)'.format(lat, lng))
-            return None
-        return tz_dict['timeZoneId']
 
     @classmethod
     def parseDistrictName(cls, district_name_str):
@@ -303,18 +279,6 @@ class EventHelper(object):
 
         # Fall back to checking abbreviations if needed
         return district if district != DistrictType.NO_DISTRICT else DistrictType.abbrevs.get(district_name_str, DistrictType.NO_DISTRICT)
-
-    @classmethod
-    def getDistrictFromEventName(cls, event_name):
-        for abbrev, district_type in DistrictType.abbrevs.items():
-            if '{} district'.format(abbrev) in event_name.lower():
-                return district_type
-
-        for district_name, district_type in DistrictType.elasticsearch_names.items():
-            if district_name in event_name:
-                return district_type
-
-        return DistrictType.NO_DISTRICT
 
     @classmethod
     def parseEventType(self, event_type_str):
@@ -342,6 +306,8 @@ class EventHelper(object):
         if ('district' in event_type_str) or ('state' in event_type_str)\
            or ('region' in event_type_str) or ('qualif' in event_type_str):
             if 'championship' in event_type_str:
+                if 'division' in event_type_str:
+                    return EventType.DISTRICT_CMP_DIVISION
                 return EventType.DISTRICT_CMP
             else:
                 return EventType.DISTRICT
@@ -371,3 +337,82 @@ class EventHelper(object):
         year = event_key[:4]
         event_short = event_key[4:]
         return year == '2015' and event_short not in {'cc', 'cacc', 'mttd'}
+
+    @classmethod
+    def remapteams_matches(cls, matches, remap_teams):
+        """
+        Remaps teams in matches
+        Mutates in place
+        """
+        for match in matches:
+            for old_team, new_team in remap_teams.items():
+                # Update alliances
+                for color in ['red', 'blue']:
+                    for attr in ['teams', 'surrogates', 'dqs']:
+                        for i, key in enumerate(match.alliances[color][attr]):
+                            if key == old_team:
+                                match.dirty = True
+                                match.alliances[color][attr][i] = new_team
+                                match.alliances_json = json.dumps(match.alliances)
+
+                # Update team key names
+                match.team_key_names = []
+                for alliance in match.alliances:
+                    match.team_key_names.extend(match.alliances[alliance].get('teams', None))
+
+    @classmethod
+    def remapteams_alliances(cls, alliance_selections, remap_teams):
+        """
+        Remaps teams in alliance selections
+        Mutates in place
+        """
+        for row in alliance_selections:
+            for choice in ['picks', 'declines']:
+                for old_team, new_team in remap_teams.items():
+                    for i, key in enumerate(row[choice]):
+                        if key == old_team:
+                            row[choice][i] = new_team
+
+    @classmethod
+    def remapteams_rankings(cls, rankings, remap_teams):
+        """
+        Remaps teams in rankings
+        Mutates in place
+        """
+        for row in rankings:
+            for old_team, new_team in remap_teams.items():
+                if str(row[1]) == old_team[3:]:
+                    row[1] = new_team[3:]
+
+    @classmethod
+    def remapteams_rankings2(cls, rankings2, remap_teams):
+        """
+        Remaps teams in rankings2
+        Mutates in place
+        """
+        for ranking in rankings2:
+            if ranking['team_key'] in remap_teams:
+                ranking['team_key'] = remap_teams[ranking['team_key']]
+
+    @classmethod
+    def remapteams_awards(cls, awards, remap_teams):
+        """
+        Remaps teams in awards
+        Mutates in place
+        """
+        for award in awards:
+            new_recipient_json_list = []
+            new_team_list = []
+            # Compute new recipient list and team list
+            for recipient in award.recipient_list:
+                for old_team, new_team in remap_teams.items():
+                    if str(recipient['team_number']) == old_team[3:]:
+                        award.dirty = True
+                        recipient['team_number'] = new_team[3:]
+
+                new_recipient_json_list.append(json.dumps(recipient))
+                new_team_list.append(ndb.Key('Team', 'frc{}'.format(recipient['team_number'])))
+
+            # Update
+            award.recipient_json_list = new_recipient_json_list
+            award.team_list = new_team_list

@@ -1,10 +1,55 @@
-application: tbatv-dev-hrd
-
 dispatch:
+# Pin these pages to py2
+- url: "www.thebluealliance.com/_/account/*"
+  service: default
+- url: "www.thebluealliance.com/search*"
+  service: default
+- url: "www.thebluealliance.com/mytba"
+  service: default
+- url: "www.thebluealliance.com/clientapi/*"
+  service: default
+# match py2 css and javascript (py3 is prefixed with py3_)
+- url: "www.thebluealliance.com/css/*"
+  service: default
+- url: "www.thebluealliance.com/js/*"
+  service: default
+  
+# APIs on py3 (both apiv3 and trusted api)
+- url: "www.thebluealliance.com/api/*"
+  service: py3-api
+
 # Send low-frequency long-running tasks to backend module
 - url: "*/backend-tasks/*"
-  module: backend-tasks
+  service: py3-tasks-io
+
+# Handles latency-insensive tasks
+- url: "*/tasks/*"
+  service: py3-tasks-io
+
+# API docs (swagger)
+- url: "*/swagger/*"
+  service: py3-web
+  
+# Default catch-all to py3
+- url: "www.thebluealliance.com/*"
+  service: py3-web
+
+# Explicitly choose py2 or py3 based on host
+- url: "py3.thebluealliance.com/*"
+  service: py3-web
+  
+- url: "py2.thebluealliance.com/*"
+  service: default
+
+# Beta PWA
+# - url: "beta.thebluealliance.com/*"
+#   service: pwa-ssr
+
+# Send low-frequency long-running tasks to backend module
+# Uses B2 instance for higher CPU/memory limits
+- url: "*/backend-tasks-b2/*"
+  service: backend-tasks-b2
 
 # Send everything else to default module
 - url: "*/"
-  module: default
+  service: default

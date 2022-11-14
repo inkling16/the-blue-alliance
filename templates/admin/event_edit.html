@@ -43,12 +43,28 @@
             <td><input type="text" name="disabled_event_short" value="{{event.event_short}}" disabled="disabled" /><input type="hidden" name="event_short" value="{{event.event_short}}" /></td>
         </tr>
         <tr>
-            <td>Event Type</td>
-            <td><input type="text" name="event_type_str" value="{{event.event_type_str}}" /></td>
+            <td>FIRST API Code</td>
+            <td><input type="text" name="first_code" placeholder="ct" {% if event.first_code %}value="{{ event.first_code }}"{% endif %}/></td>
         </tr>
         <tr>
-            <td>Event District</td>
-            <td><input type="text" name="event_district_str" value="{{event.event_district_str}}" /></td>
+            <td>Event Type</td>
+            <td><select name="event_type">
+                {% for type, name in event_types.iteritems %}
+                  <option value="{{ type }}" {% if type == event.event_type_enum %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select></td>
+        </tr>
+        <tr>
+            <td>Event District Key</td>
+            <td><input type="text" name="event_district_key" value="{{event.event_district_key}}" /></td>
+        </tr>
+        <tr>
+            <td>Playoff Type</td>
+            <td><select name="playoff_type">
+                {% for type, name in playoff_types.iteritems %}
+                  <option value="{{ type }}" {% if type == event.playoff_type %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select></td>
         </tr>
         <tr>
             <td>Event Venue</td>
@@ -56,11 +72,23 @@
         </tr>
         <tr>
             <td>Event Venue Address</td>
-            <td><textarea name="venue_address" />{{event.venue_address}}</textarea>
+            <td><textarea name="venue_address">{{event.venue_address}}</textarea></td>
         </tr>
         <tr>
-            <td>Event Location</td>
-            <td><input type="text" name="location" value="{{event.location}}" /></td>
+            <td>Event City</td>
+            <td><input type="text" name="city" value="{{event.city}}" /></td>
+        </tr>
+        <tr>
+            <td>Event State/Prov</td>
+            <td><input type="text" name="state_prov" value="{{event.state_prov}}" /></td>
+        </tr>
+        <tr>
+            <td>Postal Code</td>
+            <td><input type="text" name="postalcode" value="{{event.postalcode}}" /></td>
+        </tr>
+        <tr>
+            <td>Event Country</td>
+            <td><input type="text" name="country" value="{{event.country}}" /></td>
         </tr>
         <tr>
             <td>Official</td>
@@ -71,12 +99,24 @@
             <td><input type="text" name="first_eid" value="{{event.first_eid}}" /></td>
         </tr>
         <tr>
+            <td>Enable Predictions</td>
+            <td><input type="text" name="enable_predictions" value="{{event.enable_predictions}}" /></td>
+        </tr>
+        <tr>
             <td>Facebook Event ID</td>
             <td><input type="text" name="facebook_eid" value="{{event.facebook_eid}}" /></td>
         </tr>
         <tr>
             <td>Custom Hashtag</td>
             <td><input type="text" name="custom_hashtag" value="{{event.custom_hashtag}}" /></td>
+        </tr>
+        <tr>
+            <td>Parent Event</td>
+            <td><input type="text" name="parent_event" value="{% if event.parent_event %}{{ event.parent_event.id }}{% endif %}"/></td>
+        </tr>
+        <tr>
+            <td>Event Divisions</td>
+            <td><input type="text" name="divisions" value="{{ event.division_keys_json }}"</td>
         </tr>
         <tr>
             <td>Webcast JSON</td>
@@ -86,11 +126,11 @@
         </tr>
         <tr>
             <td>Alliances</td>
-            <td><textarea name="alliance_selections_json" >{{event.alliance_selections_json}}</textarea></td>
+            <td><textarea name="alliance_selections_json">{{alliance_selections}}</textarea></td>
         </tr>
         <tr>
             <td>Rankings</td>
-            <td><textarea name="rankings_json" >{{event.rankings_json}}</textarea></td>
+            <td><textarea name="rankings_json">{{rankings}}</textarea></td>
         </tr>
     </table>
 

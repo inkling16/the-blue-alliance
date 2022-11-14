@@ -11,7 +11,7 @@ var hiddenviews = [];
 // For keeping track of what view a webcast key is in
 var viewLocations = {};
 
-var MAX_VIEWS = 8;
+var MAX_VIEWS = 9;
 
 $(document).ready(function() {
 
@@ -75,32 +75,37 @@ function setupViews() {
   // Choosing to start chat opened or closed
   setChat(true);
 
-  // Always start with ticker open
-  setTicker(true);
-
   // Special Kickoff Mode
   if (isKickoff != null) {
 	  layout_0();
 	  setChat(true);
-    setTicker(false);
+      setTicker(false);
 	  setSocial(true);
 	  setupView(0, $("#kickoff-1"));
 	  $("#nav-alert-container").html('<div class="alert alert-success nav-alert"><button type="button" class="close" data-dismiss="alert">&times;</button><strong>Welcome!</strong> Remember to come back during the competition season for webcasts, scores, and more!<br /><br />Have an android phone? <a href="https://goo.gl/Y3cpqi" target="_blank"><u>Install The Blue Alliance app</u></a> to get live notifications when your team is competing!</div>');
   }
 
   // Special Champs Mode
+  var isChamps = urlvars['champs-all'];
+  if (isChamps != null) {
+    layout_8();
+    setChat(true);
+    setupView(0, $("#firstchamplive-1"));
+    setupView(1, $("#2016arc-1"));
+    setupView(2, $("#2016cars-1"));
+    setupView(3, $("#2016carv-1"));
+    setupView(4, $("#2016cur-1"));
+    setupView(5, $("#2016gal-1"));
+    setupView(6, $("#2016hop-1"));
+    setupView(7, $("#2016new-1"));
+    setupView(8, $("#2016tes-1"));
+  }
+
   var isChamps = urlvars['champs'];
   if (isChamps != null) {
-    layout_7();
+    layout_2();
     setChat(true);
-    setupView(0, $("#2015arc-1"));
-    setupView(1, $("#2015cars-1"));
-    setupView(2, $("#2015carv-1"));
-    setupView(3, $("#2015cur-1"));
-    setupView(4, $("#2015gal-1"));
-    setupView(5, $("#2015hop-1"));
-    setupView(6, $("#2015new-1"));
-    setupView(7, $("#2015tes-1"));
+    setupView(0, $("#firstchamplive-1"));
   }
 }
 
@@ -355,7 +360,7 @@ function swap(dragged, target) {
 //Layout Changing Control
 var height, width, current_layout, last_layout, num_views;
 // num_views[layout_number] = number of views provided by that layout
-num_views = [1, 2, 3, 4, 5, 6, 4, 8];
+num_views = [1, 2, 3, 4, 5, 6, 4, 8, 9];
 
 // Fixes layout. Call this if window resized, etc.
 function fixLayout() {
@@ -638,6 +643,61 @@ function layout_7() {
   $("#view_"+order[7]).height(height*0.5);
   $("#view_"+order[7]).css('top', height*0.5);
   $("#view_"+order[7]).css('left', width*0.75);
+
+  last_layout = current_layout;
+}
+
+function layout_8() {
+  current_layout = 8;
+  addRemoveViews(current_layout, last_layout);
+
+  height = $(".video_container").height();
+  width = $(".video_container").width();
+
+  $("#view_"+order[0]).width(width/3);
+  $("#view_"+order[0]).height(height/3);
+  $("#view_"+order[0]).css('top', 0);
+  $("#view_"+order[0]).css('left', 0);
+
+  $("#view_"+order[1]).width(width/3);
+  $("#view_"+order[1]).height(height/3);
+  $("#view_"+order[1]).css('top', 0);
+  $("#view_"+order[1]).css('left', width/3);
+
+  $("#view_"+order[2]).width(width/3);
+  $("#view_"+order[2]).height(height/3);
+  $("#view_"+order[2]).css('top', 0);
+  $("#view_"+order[2]).css('left', width*2/3);
+
+  $("#view_"+order[3]).width(width/3);
+  $("#view_"+order[3]).height(height/3);
+  $("#view_"+order[3]).css('top', height/3);
+  $("#view_"+order[3]).css('left', 0);
+
+  $("#view_"+order[4]).width(width/3);
+  $("#view_"+order[4]).height(height/3);
+  $("#view_"+order[4]).css('top', height/3);
+  $("#view_"+order[4]).css('left', width/3);
+
+  $("#view_"+order[5]).width(width/3);
+  $("#view_"+order[5]).height(height/3);
+  $("#view_"+order[5]).css('top', height/3);
+  $("#view_"+order[5]).css('left', width*2/3);
+
+  $("#view_"+order[6]).width(width/3);
+  $("#view_"+order[6]).height(height/3);
+  $("#view_"+order[6]).css('top', height*2/3);
+  $("#view_"+order[6]).css('left', 0);
+
+  $("#view_"+order[7]).width(width/3);
+  $("#view_"+order[7]).height(height/3);
+  $("#view_"+order[7]).css('top', height*2/3);
+  $("#view_"+order[7]).css('left', width/3);
+
+  $("#view_"+order[8]).width(width/3);
+  $("#view_"+order[8]).height(height/3);
+  $("#view_"+order[8]).css('top', height*2/3);
+  $("#view_"+order[8]).css('left', width*2/3);
 
   last_layout = current_layout;
 }

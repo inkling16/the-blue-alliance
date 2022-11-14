@@ -63,6 +63,31 @@ $RECYCLE.BIN/
 # Compiled/Intermediate Files #
 ###############################
 static/css/less_css/*.css
-static/css/*.css
-static/javascript/*.js
+static/compiled/*
 version_info.json
+tbaMobilev9openapi.json
+
+# Node.js/npm #
+###############
+node_modules
+.npm
+.node_repl_history
+
+# Jest Coverage reports #
+#########################
+coverage
+
+# Keys #
+########
+static/javascript/tba_js/tba_keys.js
+ops/deploy_keys.tar
+ops/*deploy.json
+ops/dev/conf.json
+ops/dev/*-auth.json
+test_keys.json
+service-account-key.json
+
+# Vagrant #
+###########
+.vagrant/
+dev-datastore/

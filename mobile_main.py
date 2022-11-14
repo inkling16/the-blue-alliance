@@ -12,7 +12,9 @@ import tba_config
 from consts.client_type import ClientType
 from helpers.media_helper import MediaParser
 from helpers.push_helper import PushHelper
+from helpers.notification_helper import NotificationHelper
 from helpers.mytba_helper import MyTBAHelper
+from helpers.suggestions.suggestion_creator import SuggestionCreator
 from models.account import Account
 from models.favorite import Favorite
 from models.media import Media
@@ -20,37 +22,62 @@ from models.sitevar import Sitevar
 from models.subscription import Subscription
 from models.mobile_api_messages import BaseResponse, FavoriteCollection, FavoriteMessage, RegistrationRequest, \
                                        SubscriptionCollection, SubscriptionMessage, ModelPreferenceMessage, \
-                                       MediaSuggestionMessage
+                                       MediaSuggestionMessage, PingRequest
 from models.mobile_client import MobileClient
 from models.suggestion import Suggestion
 
-client_id_sitevar = Sitevar.get_by_id('appengine.webClientId')
-if client_id_sitevar is None:
-    raise Exception("Sitevar appengine.webClientId is undefined. Can't process incoming requests")
-WEB_CLIENT_ID = str(client_id_sitevar.values_json)
-ANDROID_AUDIENCE = WEB_CLIENT_ID
+WEB_CLIENT_ID = ""
+ANDROID_AUDIENCE = ""
+ANDROID_CLIENT_ID = ""
+IOS_CLIENT_ID = ""
 
-android_id_sitevar = Sitevar.get_by_id('android.clientId')
-if android_id_sitevar is None:
-    raise Exception("Sitevar android.clientId is undefined. Can't process incoming requests")
-ANDROID_CLIENT_ID = str(android_id_sitevar.values_json)
+client_ids_sitevar = Sitevar.get_or_insert('mobile.clientIds')
+if isinstance(client_ids_sitevar.contents, dict):
+    WEB_CLIENT_ID = client_ids_sitevar.contents.get("web", "")
+    ANDROID_AUDIENCE = client_ids_sitevar.contents.get("android-audience", "")
+    ANDROID_CLIENT_ID = client_ids_sitevar.contents.get("android", "")
+    IOS_CLIENT_ID = client_ids_sitevar.contents.get("ios", "")
 
-# To enable iOS access to the API, add another variable for the iOS client ID
+if not WEB_CLIENT_ID:
+    logging.error("Web client ID is not set, see /admin/authkeys")
 
-client_ids = [WEB_CLIENT_ID, ANDROID_CLIENT_ID]
+if not ANDROID_CLIENT_ID:
+    logging.error("Android client ID is not set, see /admin/authkeys")
+
+if not ANDROID_AUDIENCE:
+    logging.error("Android Audience is not set, see /admin/authkeys")
+
+if not IOS_CLIENT_ID:
+    logging.error("iOS client ID is not set, see /admin/authkeys")
+
+client_ids = [WEB_CLIENT_ID, ANDROID_CLIENT_ID, ANDROID_AUDIENCE, IOS_CLIENT_ID]
 if tba_config.DEBUG:
     '''
     Only allow API Explorer access on dev versions
     '''
     client_ids.append(endpoints.API_EXPLORER_CLIENT_ID)
 
-# To enable iOS access, add it's client ID here
 
-
-@endpoints.api(name='tbaMobile', version='v9', description="API for TBA Mobile clients",
-               allowed_client_ids=client_ids,
-               audiences=[ANDROID_AUDIENCE],
-               scopes=[endpoints.EMAIL_SCOPE])
+@endpoints.api(
+    name='tbaMobile',
+    version='v9',
+    description="API for TBA Mobile clients",
+    allowed_client_ids=client_ids,
+    audiences={
+        'firebase': ['tbatv-prod-hrd'],
+        'google_id_token': [ANDROID_AUDIENCE],
+    },
+    issuers={
+        'firebase': endpoints.Issuer(
+           'https://securetoken.google.com/tbatv-prod-hrd',
+           'https://www.googleapis.com/service_accounts/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+        ),
+        'google_id_token': endpoints.Issuer(
+          'https://accounts.google.com',
+          'https://www.googleapis.com/oauth2/v3/certs'
+        ),
+    }
+)
 class MobileAPI(remote.Service):
 
     @endpoints.method(RegistrationRequest, BaseResponse,
@@ -111,6 +138,31 @@ class MobileAPI(remote.Service):
             ndb.delete_multi(query)
             return BaseResponse(code=200, message="User deleted")
 
+    @endpoints.method(PingRequest, BaseResponse,
+                      path='ping', http_method='POST',
+                      name='ping')
+    def ping_client(self, request):
+        current_user = endpoints.get_current_user()
+        if current_user is None:
+            return BaseResponse(code=401, message="Unauthorized to ping client")
+
+        user_id = PushHelper.user_email_to_id(current_user.email())
+        gcm_id = request.mobile_id
+
+        # Find a Client for the current user with the passed GCM ID
+        clients = MobileClient.query(MobileClient.messaging_id == gcm_id, ancestor=ndb.Key(Account, user_id)).fetch(1)
+        if len(clients) == 0:
+            # No Client for user with that push token - bailing
+            return BaseResponse(code=404, message="Invalid push token for user")
+        else:
+            client = clients[0]
+            from helpers.tbans_helper import TBANSHelper
+            success = TBANSHelper.ping(client)
+            if success:
+                return BaseResponse(code=200, message="Ping sent")
+            else:
+                return BaseResponse(code=500, message="Failed to ping client")
+
     @endpoints.method(message_types.VoidMessage, FavoriteCollection,
                       path='favorites/list', http_method='POST',
                       name='favorites.list')
@@ -135,6 +187,7 @@ class MobileAPI(remote.Service):
             return BaseResponse(code=401, message="Unauthorized to update model preferences")
         user_id = PushHelper.user_email_to_id(current_user.email())
         model_key = request.model_key
+        model_type = request.model_type
         output = {}
         code = 0
 
@@ -143,7 +196,7 @@ class MobileAPI(remote.Service):
                 parent=ndb.Key(Account, user_id),
                 user_id=user_id,
                 model_key=model_key,
-                model_type=request.model_type
+                model_type=model_type
             )
             result = MyTBAHelper.add_favorite(fav, request.device_key)
             if result == 200:
@@ -159,7 +212,7 @@ class MobileAPI(remote.Service):
                                       "message": "Unknown error adding favorite"}
                 code += 500
         else:
-            result = MyTBAHelper.remove_favorite(user_id, model_key, request.device_key)
+            result = MyTBAHelper.remove_favorite(user_id, model_key, model_type, request.device_key)
             if result == 200:
                 output['favorite'] = {"code":    200,
                                       "message": "Favorite deleted"}
@@ -195,7 +248,7 @@ class MobileAPI(remote.Service):
                                           "message": "Unknown error adding favorite"}
                 code += 500
         else:
-            result = MyTBAHelper.remove_subscription(user_id, model_key, request.device_key)
+            result = MyTBAHelper.remove_subscription(user_id, model_key, model_type, request.device_key)
             if result == 200:
                 output['subscription'] = {"code":    200,
                                           "message": "Subscription removed"}
@@ -243,33 +296,24 @@ class MobileAPI(remote.Service):
             # Trying to suggest a media for an invalid model type
             return BaseResponse(code=400, message="Bad model type")
 
-        media_dict = MediaParser.partial_media_dict_from_url(request.media_url.strip())
-        if media_dict is not None:
-            existing_media = Media.get_by_id(
-                    Media.render_key_name(media_dict['media_type_enum'], media_dict['foreign_key']))
-            if existing_media is None \
-                    or request.reference_key not in [reference.id() for reference in existing_media.references]:
-                media_dict['year'] = request.year
-                media_dict['reference_type'] = request.reference_type
-                media_dict['reference_key'] = request.reference_key
+        # Need to split deletehash out into its own private dict. Don't want that to be exposed via API...
+        private_details_json = None
+        if request.details_json:
+            incoming_details = json.loads(request.details_json)
+            private_details = None
+            if 'deletehash' in incoming_details:
+                private_details = {'deletehash': incoming_details.pop('deletehash')}
+            private_details_json = json.dumps(private_details) if private_details else None
 
-                # Need to split deletehash out into its own private dict. Don't want that to be exposed via API...
-                if request.details_json:
-                    incoming_details = json.loads(request.details_json)
-                    private_details = None
-                    if 'deletehash' in incoming_details:
-                        private_details = {'deletehash': incoming_details.pop('deletehash')}
+        status = SuggestionCreator.createTeamMediaSuggestion(
+            author_account_key=ndb.Key(Account, user_id),
+            media_url=request.media_url,
+            team_key=request.reference_key,
+            year_str=str(request.year),
+            private_details_json=private_details_json)
 
-                    media_dict['private_details_json'] = json.dumps(private_details) if private_details else None
-                    media_dict['details_json'] = json.dumps(incoming_details)
-
-                suggestion = Suggestion(
-                    author=ndb.Key(Account, user_id),
-                    target_model="media"
-                )
-                suggestion.contents = media_dict
-                suggestion.put()
-
+        if status != 'bad_url':
+            if status == 'success':
                 return BaseResponse(code=200, message="Suggestion added")
             else:
                 return BaseResponse(code=304, message="Suggestion already exists")

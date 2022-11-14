@@ -1,15 +1,46 @@
 language: python
 python: 2.7
-
-before_script:
-  - mkdir -p vendors
-  - wget http://googleappengine.googlecode.com/files/google_appengine_1.8.7.zip -nv
-  - unzip -qd vendors google_appengine_1.8.7.zip
-  - ln -s vendors/google_appengine/dev_appserver.py .
-
-install:
-  - pip install -r requirements.txt
-
-:script: paver test
-
 sudo: false
+addons:
+  apt:
+    packages:
+    - jq
+cache:
+  pip: true
+  directories:
+  - node_modules
+env:
+  matrix:
+  - JOB=PYUNIT
+  - JOB=PYBUILD
+  - JOB=JSUNIT
+  - JOB=LINT
+  - JOB=MAKE
+stages:
+  - test
+  - name: deploy
+    if: (type = push) AND (branch IN (master, py3))
+install:
+- travis_retry ./ops/travis/travis-install.sh $JOB
+- export PYTHONPATH=${PYTHONPATH}:${HOME}/google_appengine
+- export ENDPOINTS_GAE_SDK=$(gcloud info --format="value(installation.sdk_root)")
+before_script:
+- ./ops/travis/travis-before.sh $JOB
+script:
+- ./ops/travis/travis-worker.sh $JOB
+after_failure:
+- cat test_failures.temp
+before_deploy:
+- ./ops/manage_deploy_keys.sh -d
+- ./ops/manage_deploy_keys.sh -x
+jobs:
+  include:
+  - stage: deploy
+    script: skip
+    env: JOB=DEPLOY
+    deploy:
+      skip_cleanup: true
+      provider: script
+      script: ./ops/travis/travis-deploy.sh
+      on:
+        branch: $CONTINUOUS_PUSH_BRANCH

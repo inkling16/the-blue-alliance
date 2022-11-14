@@ -9,6 +9,17 @@ indexes:
 # automatically uploaded to the admin console when you next deploy
 # your application using appcfg.py.
 
+- kind: ApiAuthAccess
+  properties:
+  - name: event_list
+  - name: owner
+  - name: expiration
+
+- kind: ApiAuthAccess
+  properties:
+  - name: owner
+  - name: expiration
+
 - kind: Event
   properties:
   - name: __key__
@@ -29,7 +40,20 @@ indexes:
   properties:
   - name: event_type_enum
   - name: year
+  - name: end_date
+    direction: desc
+
+- kind: Event
+  properties:
+  - name: event_type_enum
+  - name: year
   - name: first_eid
+
+- kind: Event
+  properties:
+  - name: event_type_enum
+  - name: year
+  - name: start_date
 
 - kind: Event
   properties:
@@ -116,3 +140,33 @@ indexes:
   - name: team_key_names
   - name: set_number
   - name: match_number
+
+- kind: Subscription
+  properties:
+  - name: model_key
+  - name: model_type
+  - name: notification_types
+  - name: user_id
+
+- kind: Subscription
+  ancestor: yes
+  properties:
+  - name: model_type
+  - name: notification_types
+  - name: model_key
+
+- kind: TeamAdminAccess
+  properties:
+  - name: account
+  - name: expiration
+
+- kind: TeamAdminAccess
+  properties:
+  - name: account
+  - name: team_number
+  - name: expiration
+
+- kind: TeamAdminAccess
+  properties:
+  - name: year
+  - name: team_number

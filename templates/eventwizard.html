@@ -9,7 +9,7 @@
   <div class="row">
     <div class="col-xs-12">
       <h1 class="endheader">TBA Event Wizard</h1>
-      <p>A tool to input FRC event data. <a href="/contact">Contact us</a> if you're running an offseason event and would like to import your data to TBA.</p>
+      <p>A tool to input FRC event data. <a href="/add-data">Visit this page</a> for more info if you're running an offseason event and would like to import your data to TBA, or <a href="/contact">contact us</a>.</p>
       <p>For help using this tool, please refer to the <a href="https://docs.google.com/document/d/1RWcsehMDXzlAyv4p5srwofknYvdNt6noejpMSYZMmeA/pub">User Guide</a>.</p>
       <hr>
 
@@ -19,13 +19,16 @@
           <label for="event_key" class="col-sm-2 control-label">Select Event</label>
           <div class="col-sm-10">
             <select id="event_key_select" class="form-control">
-                <option value="">Select Event</option>
-                <option value="other">Other</option>
+               <option value="">Select Event</option>
+               {% if selected_event %}
+                  <option value="{{ selected_event.key_name }}" selected>{{ selected_event.year }} {{ selected_event.name }}</option>
+                {% endif %}
+              <option value="other">Other</option>
             </select>
             <input type="text" class="form-control" id="event_key" placeholder="Event Key"/>
           </div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="auth-tools">
           <label class="col-sm-2 control-label">Auth Tools</label>
           <div class="col-sm-10">
             <button type="button" class="btn btn-default" id="load_auth">Load Auth</button>
@@ -103,7 +106,15 @@
             <div class="radio">
               <label><input type="radio" name="import-comp-level" id="import-comp-level-f" value="f">Finals</label>
             </div>
-            <label for="schedule_file">Report File</label><input type="file" id="schedule_file" name="schedule_file" />
+            <label for="alliance-count-schedule">Number of Alliances (Playoffs Only)</label>
+            <div class="radio">
+              <label><input type="radio" name="alliance-count-schedule" id="alliance-count-schedule-8" value="8" checked>8</label>
+            </div>
+            <div class="radio">
+              <label><input type="radio" name="alliance-count-schedule" id="alliance-count-schedule-16" value="16">16</label>
+            </div>
+
+              <label for="schedule_file">Report File</label><input type="file" id="schedule_file" name="schedule_file" />
 
             <div id="schedule_preview_status">
 
@@ -129,6 +140,13 @@
         <div class="tab-pane" id="results">
           <h3>Upload Match Results</h3>
           <p>Lets you upload a FMS Match Results report. Note that this will overwite data that currently exists for these matches.</p>
+          <label for="alliance-count-results">Number of Alliances (Playoffs Only)</label>
+          <div class="radio">
+            <label><input type="radio" name="alliance-count-results" id="alliance-count-results-8" value="8" checked>8</label>
+          </div>
+          <div class="radio">
+            <label><input type="radio" name="alliance-count-results" id="alliance-count-results-16" value="16">16</label>
+          </div>
 
           <label for="results_file">Report File</label><input type="file" id="results_file" name="results_file" />
           <div id="results_preview_status">
@@ -184,7 +202,7 @@
 {% block inline_javascript %}
 <script src="//cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/md5.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/jquery-csv/0.71/jquery.csv-0.71.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/xlsx/0.8.0/xlsx.core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.14.0/xlsx.full.min.js"></script>
 <script type="text/javascript" src="/javascript/tba_combined_js.eventwizard.min.js"></script>
 
 {% endblock %}
